@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow — Task Sequencer</title>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-base:      #8FB1B8;
+    --bg-panel:     #7da3aa;
+    --bg-card:      #6e97a0;
+    --bg-hover:     #82a8b0;
+    --bg-active:    #609099;
+    --border:       rgba(0,0,0,0.18);
+    --border-light: rgba(0,0,0,0.28);
+    --text-primary:   #0f2428;
+    --text-secondary: #1e3d44;
+    --text-dim:       #3a6570;
+    --accent:         #0f2428;
+    --accent-dark:    #0a1a1d;
+    --block-default:  #515E60;
+    --playhead:       #0f2428;
+    --playhead-glow:  rgba(15,36,40,0.5);
+    --scrub-bg:       #6a9099;
+    --gothic: 'UnifrakturMaguntia', serif;
+    --serif:  'IM Fell English', Georgia, serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg-base); color: var(--text-primary);
+    font-family: var(--serif);
+    height:100vh; display:flex; flex-direction:column;
+    overflow:hidden; user-select:none;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    display:flex; align-items:center; gap:12px;
+    padding:0 16px; height:50px;
+    background:var(--bg-panel); border-bottom:1px solid var(--border);
+    flex-shrink:0;
+  }
+  .logo { font-family:var(--gothic); font-size:22px; color:var(--text-primary); line-height:1; }
+  .divider-v { width:1px; height:24px; background:var(--border); flex-shrink:0; }
+
+  /* ── CIRCLE TRANSPORT BUTTONS ── */
+  .transport { display:flex; align-items:center; gap:8px; }
+  .circ-btn {
+    width:28px; height:28px; border-radius:50%;
+    background:transparent; border:2px solid #0f2428;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background 0.15s; flex-shrink:0; padding:0;
+    color:#0f2428; font-size:10px; line-height:1;
+  }
+  .circ-btn:hover { background:rgba(15,36,40,0.12); }
+  .circ-btn.active { background:#0f2428; color:var(--bg-base); }
+  /* play SVG triangle */
+  .circ-btn .play-shape {
+    width:0; height:0;
+    border-top:5px solid transparent;
+    border-bottom:5px solid transparent;
+    border-left:9px solid #0f2428;
+    margin-left:2px;
+  }
+  .circ-btn.active .play-shape { border-left-color:var(--bg-base); }
+  /* pause bars */
+  .circ-btn .pause-shape {
+    display:flex; gap:3px; align-items:center; height:12px;
+  }
+  .circ-btn .pause-bar {
+    width:3px; height:12px; background:#0f2428; border-radius:1px;
+  }
+  .circ-btn.active .pause-bar { background:var(--bg-base); }
+
+  .time-display {
+    background:var(--scrub-bg); border:1px solid var(--border);
+    border-radius:3px; padding:4px 10px;
+    font-family:var(--gothic); font-size:14px;
+    color:var(--accent); min-width:90px; text-align:center;
+  }
+  .bpm-display {
+    background:var(--scrub-bg); border:1px solid var(--border);
+    border-radius:3px; padding:4px 8px;
+    font-family:var(--serif); font-size:10px; color:var(--text-secondary);
+  }
+  .session-name {
+    font-family:var(--gothic); font-size:16px;
+    color:var(--text-dim); flex:1; text-align:center;
+  }
+
+  /* Grid toggle switch */
+  .grid-toggle-wrap {
+    display:flex; align-items:center; gap:7px;
+    font-family:var(--serif); font-size:11px; font-style:italic;
+    color:var(--text-dim); flex-shrink:0;
+  }
+  .toggle-switch {
+    position:relative; width:34px; height:18px; cursor:pointer;
+  }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-track {
+    position:absolute; inset:0; background:rgba(0,0,0,0.2);
+    border-radius:9px; border:1px solid var(--border);
+    transition:background 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-track { background:rgba(15,36,40,0.5); }
+  .toggle-thumb {
+    position:absolute; width:12px; height:12px; border-radius:50%;
+    background:#0f2428; top:2px; left:2px; transition:left 0.2s;
+  }
+  .toggle-switch input:checked ~ .toggle-thumb { left:18px; }
+
+  .btn-add-task {
+    background:transparent; border:1px solid var(--accent);
+    color:var(--accent); padding:5px 14px; border-radius:3px;
+    font-family:var(--gothic); font-size:14px;
+    cursor:pointer; transition:all 0.15s; white-space:nowrap; flex-shrink:0;
+  }
+  .btn-add-task:hover { background:var(--accent); color:var(--bg-base); }
+
+  /* ── RULER ── */
+  .ruler-wrap {
+    height:32px; background:var(--scrub-bg);
+    border-bottom:1px solid var(--border);
+    position:relative; flex-shrink:0; overflow:hidden;
+  }
+  .ruler-canvas { position:absolute; top:0; left:0; width:100%; height:100%; }
+
+  /* ── MAIN ── */
+  .main { display:flex; flex:1; overflow:hidden; }
+
+  /* ── QUEUE PANEL ── */
+  .queue-panel {
+    width:260px; flex-shrink:0;
+    background:var(--bg-panel); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .panel-header {
+    padding:9px 14px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    font-family:var(--gothic); font-size:16px; color:var(--text-dim); flex-shrink:0;
+  }
+  .queue-list {
+    flex:1; overflow-y:auto; padding:7px;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .queue-list::-webkit-scrollbar { width:4px; }
+  .queue-list::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.2); border-radius:2px; }
+
+  .queue-item {
+    background:var(--bg-card); border:1px solid var(--border);
+    border-radius:4px; padding:8px 9px;
+    cursor:grab; position:relative; overflow:hidden;
+    transition:all 0.15s; display:flex; align-items:center; gap:8px;
+  }
+  /* left color stripe removed per request — no colored line */
+  .queue-item:hover { background:var(--bg-hover); border-color:var(--border-light); }
+  .queue-item.active { background:var(--bg-active); box-shadow:0 0 10px rgba(0,0,0,0.25); }
+  .queue-item.active .task-name::after { content:' ▶'; font-size:8px; opacity:0.6; }
+  .queue-item.completed { opacity:0.45; }
+  .queue-item.completed .task-name { text-decoration:line-through; color:var(--text-dim); }
+
+  .queue-thumb {
+    width:30px; height:30px; border-radius:4px; flex-shrink:0;
+    background:rgba(0,0,0,0.15); border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .queue-thumb img { width:100%; height:100%; object-fit:cover; border-radius:3px; }
+  .x-placeholder { font-size:14px; font-weight:300; color:rgba(0,0,0,0.35); font-family:sans-serif; line-height:1; }
+
+  .item-info { flex:1; min-width:0; }
+  .task-name {
+    font-family:var(--serif); font-size:13px; font-style:italic;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-primary);
+  }
+  .task-meta { font-family:var(--serif); font-size:10px; color:var(--text-dim); margin-top:1px; }
+  .drag-handle { color:var(--text-dim); font-size:10px; cursor:grab; padding:2px; flex-shrink:0; }
+  .delete-btn {
+    background:transparent; border:none; color:var(--text-dim);
+    cursor:pointer; font-size:12px; padding:3px 5px;
+    border-radius:3px; transition:color 0.15s; flex-shrink:0; font-family:sans-serif;
+  }
+  .delete-btn:hover { color:#3a0a0a; }
+
+  /* ── SEQUENCE ── */
+  .sequence-view { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .seq-canvas-wrap {
+    flex:1; overflow-x:auto; overflow-y:auto;
+    position:relative; background:var(--bg-base);
+  }
+  .seq-canvas-wrap::-webkit-scrollbar { height:6px; width:6px; }
+  .seq-canvas-wrap::-webkit-scrollbar-track { background:var(--bg-card); }
+  .seq-canvas-wrap::-webkit-scrollbar-thumb { background:rgba(0,0,0,0.2); border-radius:3px; }
+  .seq-inner { position:relative; min-height:100%; }
+
+  /* graph-paper grid overlay */
+  .graph-paper {
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    background-image:
+      linear-gradient(rgba(0,0,0,0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.07) 1px, transparent 1px);
+    background-size: 18px 18px;
+    background-position: 120px 0;
+    display:none;
+  }
+  .graph-paper.visible { display:block; }
+
+  /* Lane rows */
+  .lane-row {
+    height:72px; border-bottom:1px solid var(--border);
+    position:relative; display:flex; align-items:center; z-index:2;
+  }
+  .lane-row:nth-child(even) { background:rgba(0,0,0,0.03); }
+  .lane-label {
+    position:sticky; left:0; z-index:6;
+    width:120px; height:100%;
+    background:var(--bg-panel); border-right:1px solid var(--border);
+    display:flex; align-items:center; padding:0 12px; flex-shrink:0; gap:8px;
+  }
+  .lane-label-text { font-family:var(--gothic); font-size:14px; color:var(--text-secondary); }
+  .lane-color-bar { width:3px; height:32px; border-radius:2px; flex-shrink:0; }
+  .lane-content { flex:1; height:100%; position:relative; }
+
+  /* ── TASK BLOCKS ── */
+  .task-block {
+    position:absolute; top:10px; height:52px;
+    border-radius:4px;
+    border:1px solid rgba(255,255,255,0.13);
+    /* no left colored stripe */
+    overflow:hidden; cursor:grab;
+    transition:filter 0.15s, opacity 0.15s, box-shadow 0.15s;
+    display:flex; align-items:center; padding:0; gap:0;
+  }
+  .task-block:hover { filter:brightness(1.1); }
+  .task-block.current {
+    filter:brightness(1.18);
+    box-shadow:0 0 18px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.18);
+  }
+  .task-block.done { opacity:0.3; filter:grayscale(0.6); }
+  .task-block.dragging { opacity:0.5; cursor:grabbing; }
+
+  .block-thumb {
+    width:32px; height:52px; flex-shrink:0;
+    background:rgba(0,0,0,0.2);
+    border-right:1px solid rgba(0,0,0,0.15);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .block-thumb img { width:100%; height:100%; object-fit:cover; }
+  .block-thumb .x-placeholder { font-size:16px; }
+
+  .block-text { flex:1; min-width:0; padding:0 6px; }
+  .block-label {
+    font-family:var(--gothic); font-size:13px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display:block; color:rgba(255,255,255,0.92);
+    text-shadow:0 1px 2px rgba(0,0,0,0.4);
+  }
+  .block-duration {
+    font-family:var(--serif); font-size:9px; font-style:italic;
+    color:rgba(255,255,255,0.6); display:block; margin-top:1px;
+  }
+
+  /* ── STAR BUTTON (circle outline, transparent fill) ── */
+  .block-prefs-btn {
+    width:22px; height:22px; flex-shrink:0; margin-right:6px;
+    background:transparent;
+    border:2px solid #000;
+    border-radius:50%;
+    cursor:pointer; color:#000;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; line-height:1;
+    transition:background 0.15s;
+    font-family:sans-serif; position:relative; z-index:2;
+  }
+  .block-prefs-btn:hover { background:rgba(0,0,0,0.15); }
+
+  /* Playhead */
+  .playhead-line {
+    position:absolute; top:0; bottom:0; width:2px;
+    background:var(--playhead); box-shadow:0 0 10px var(--playhead-glow);
+    z-index:10; pointer-events:none;
+  }
+  .playhead-line::before {
+    content:''; position:absolute; top:0;
+    left:50%; transform:translateX(-50%);
+    width:10px; height:10px; background:var(--playhead);
+    clip-path:polygon(50% 100%, 0% 0%, 100% 0%);
+  }
+
+  .grid-lines {
+    position:absolute; top:0; left:120px; right:0; bottom:0;
+    pointer-events:none; z-index:0;
+  }
+
+  /* ── NOW PLAYING ── */
+  .now-playing {
+    height:72px; background:var(--bg-panel); border-top:1px solid var(--border);
+    display:flex; align-items:center; padding:0 20px; gap:18px; flex-shrink:0;
+  }
+  .now-label { font-family:var(--gothic); font-size:14px; color:var(--text-dim); white-space:nowrap; line-height:1.2; }
+  .waveform-mini { display:flex; align-items:center; gap:2px; height:28px; }
+  .wave-bar {
+    width:3px; background:var(--accent); border-radius:2px; opacity:0.5;
+    animation:wave-pulse 0.8s ease-in-out infinite alternate;
+  }
+  @keyframes wave-pulse {
+    from { transform:scaleY(0.3); opacity:0.3; }
+    to   { transform:scaleY(1);   opacity:0.7; }
+  }
+  .now-thumb {
+    width:46px; height:46px; border-radius:7px; flex-shrink:0;
+    background:rgba(0,0,0,0.15); border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.2); transition:border-color 0.3s;
+  }
+  .now-thumb img { width:100%; height:100%; object-fit:cover; border-radius:6px; }
+  .now-thumb .x-placeholder { font-size:20px; }
+  .now-task-info { flex:1; }
+  .now-task-name { font-family:var(--gothic); font-size:18px; color:var(--text-primary); }
+  .now-task-sub { font-family:var(--serif); font-size:11px; font-style:italic; color:var(--text-secondary); margin-top:2px; }
+  .progress-wrap { flex:2; display:flex; flex-direction:column; gap:6px; }
+  .progress-bar-bg { height:4px; background:rgba(0,0,0,0.15); border-radius:2px; overflow:hidden; border:1px solid var(--border); }
+  .progress-bar-fill { height:100%; background:var(--accent); border-radius:2px; }
+  .progress-times { display:flex; justify-content:space-between; font-family:var(--serif); font-size:10px; color:var(--text-dim); }
+  .next-up { font-family:var(--serif); font-size:10px; color:var(--text-dim); white-space:nowrap; }
+  .next-up strong { color:var(--text-secondary); }
+
+  /* ── MODALS ── */
+  .modal-overlay {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,0.7); z-index:100;
+    align-items:center; justify-content:center; backdrop-filter:blur(4px);
+  }
+  .modal-overlay.open { display:flex; }
+  .modal {
+    background:var(--bg-card); border:1px solid var(--border-light);
+    border-radius:6px; width:440px; padding:26px;
+    box-shadow:0 24px 64px rgba(0,0,0,0.55); max-height:90vh; overflow-y:auto;
+  }
+  .modal h2 { font-family:var(--gothic); font-size:22px; color:var(--text-primary); margin-bottom:20px; }
+  .form-row { margin-bottom:16px; }
+  .form-label { font-family:var(--gothic); font-size:13px; color:var(--text-dim); display:block; margin-bottom:7px; }
+  .form-input {
+    width:100%; background:rgba(0,0,0,0.12); border:1px solid var(--border);
+    border-radius:3px; padding:8px 12px;
+    font-family:var(--serif); font-style:italic; font-size:13px;
+    color:var(--text-primary); outline:none; transition:border-color 0.15s;
+  }
+  .form-input:focus { border-color:var(--accent); }
+  select.form-input { cursor:pointer; font-style:normal; }
+  option { background:var(--bg-panel); }
+
+  /* Duration slider */
+  .dur-slider-wrap { display:flex; flex-direction:column; gap:6px; }
+  .dur-slider {
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:4px; border-radius:2px;
+    background:rgba(0,0,0,0.2); outline:none; cursor:pointer;
+    accent-color:#0f2428;
+  }
+  .dur-slider::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none;
+    width:16px; height:16px; border-radius:50%;
+    background:#0f2428; cursor:pointer; border:2px solid rgba(255,255,255,0.4);
+  }
+  .dur-slider::-moz-range-thumb {
+    width:16px; height:16px; border-radius:50%;
+    background:#0f2428; cursor:pointer; border:2px solid rgba(255,255,255,0.4);
+  }
+  .dur-readout {
+    font-family:var(--gothic); font-size:15px; color:var(--text-primary);
+    text-align:center;
+  }
+
+  /* Color swatches */
+  .color-swatch-grid { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:8px; }
+  .color-swatch {
+    width:28px; height:28px; border-radius:4px;
+    border:2px solid transparent; cursor:pointer; position:relative;
+    transition:transform 0.1s, border-color 0.1s;
+  }
+  .color-swatch:hover { transform:scale(1.1); }
+  .color-swatch.selected { border-color:#fff; }
+  .color-swatch.selected::after {
+    content:'✓'; position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; color:#fff; font-family:sans-serif;
+    text-shadow:0 1px 2px rgba(0,0,0,0.7);
+  }
+  .hex-row { display:flex; gap:8px; align-items:center; }
+  .hex-preview { width:30px; height:30px; border-radius:4px; border:1px solid var(--border); flex-shrink:0; }
+
+  /* Thumb upload */
+  .thumb-upload-area {
+    border:1px dashed var(--border-light); border-radius:4px;
+    padding:12px; display:flex; align-items:center; gap:12px;
+    cursor:pointer; transition:border-color 0.15s;
+  }
+  .thumb-upload-area:hover { border-color:var(--accent); }
+  .thumb-preview-box {
+    width:48px; height:48px; border-radius:6px; flex-shrink:0;
+    background:rgba(0,0,0,0.15); border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .thumb-preview-box img { width:100%; height:100%; object-fit:cover; border-radius:5px; }
+  .thumb-preview-box .x-placeholder { font-size:20px; }
+  .thumb-upload-text { flex:1; font-family:var(--serif); font-size:11px; font-style:italic; color:var(--text-secondary); line-height:1.6; }
+  .thumb-clear-btn {
+    background:transparent; border:1px solid var(--border); color:var(--text-dim);
+    font-size:10px; padding:3px 8px; border-radius:3px; cursor:pointer;
+    transition:all 0.15s; display:none; font-family:var(--serif);
+  }
+  .thumb-clear-btn:hover { color:#3a0a0a; border-color:rgba(100,0,0,0.4); }
+  .thumb-clear-btn.visible { display:block; }
+
+  .modal-actions { display:flex; gap:10px; margin-top:22px; justify-content:flex-end; }
+  .btn-cancel {
+    background:transparent; border:1px solid var(--border); color:var(--text-secondary);
+    padding:7px 18px; border-radius:3px; font-family:var(--gothic); font-size:14px; cursor:pointer; transition:all 0.15s;
+  }
+  .btn-cancel:hover { border-color:var(--border-light); color:var(--text-primary); }
+  .btn-confirm {
+    background:var(--accent); border:1px solid var(--accent); color:var(--bg-base);
+    padding:7px 18px; border-radius:3px; font-family:var(--gothic); font-size:14px; cursor:pointer; transition:all 0.15s;
+  }
+  .btn-confirm:hover { background:var(--accent-dark); }
+
+  .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:10px; }
+  .empty-icon { font-size:24px; opacity:0.3; font-family:sans-serif; }
+  .empty-text { font-family:var(--gothic); font-size:14px; color:var(--text-dim); }
+
+  #thumbFileInput, #prefThumbFileInput { display:none; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">Flow</div>
+  <div class="divider-v"></div>
+  <div class="transport">
+    <!-- Play button -->
+    <button class="circ-btn" id="btnPlay" title="Play (Space)" onclick="pressPlay()">
+      <span class="play-shape" id="playShape"></span>
+    </button>
+    <!-- Pause button -->
+    <button class="circ-btn" id="btnPause" title="Pause" onclick="pressPause()">
+      <span class="pause-shape"><span class="pause-bar"></span><span class="pause-bar"></span></span>
+    </button>
+  </div>
+  <div class="divider-v"></div>
+  <div class="time-display" id="timeDisplay">00:00:00</div>
+  <div class="bpm-display" id="progressCount">0 / 0</div>
+  <div class="session-name">Session — Flow State</div>
+  <div class="grid-toggle-wrap">
+    <label class="toggle-switch" title="Toggle graph paper grid">
+      <input type="checkbox" id="gridToggle" onchange="toggleGrid()" />
+      <span class="toggle-track"></span>
+      <span class="toggle-thumb"></span>
+    </label>
+    <span>Grid</span>
+  </div>
+  <button class="btn-add-task" onclick="openAddModal()">✦ Add Task</button>
+</div>
+
+<!-- RULER -->
+<div class="ruler-wrap">
+  <canvas class="ruler-canvas" id="rulerCanvas"></canvas>
+  <div class="playhead-line" id="rulerPlayhead" style="left:120px"></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="queue-panel">
+    <div class="panel-header">
+      <span>Queue</span>
+      <span id="queueCount" style="font-family:var(--serif);font-size:12px">—</span>
+    </div>
+    <div class="queue-list" id="queueList"></div>
+  </div>
+  <div class="sequence-view">
+    <div class="seq-canvas-wrap" id="seqWrap">
+      <div class="seq-inner" id="seqInner">
+        <canvas class="grid-lines" id="gridCanvas"></canvas>
+        <div class="graph-paper" id="graphPaper"></div>
+        <div id="laneRows"></div>
+        <div class="playhead-line" id="seqPlayhead" style="left:120px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NOW PLAYING -->
+<div class="now-playing">
+  <div class="now-label">Now<br>Playing</div>
+  <div class="waveform-mini" id="waveform"></div>
+  <div class="now-thumb" id="nowThumb"><span class="x-placeholder">✕</span></div>
+  <div class="now-task-info">
+    <div class="now-task-name" id="nowName">—</div>
+    <div class="now-task-sub" id="nowSub">Start a session to begin your flow</div>
+  </div>
+  <div class="progress-wrap">
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="progress-times"><span id="timeElapsed">0:00</span><span id="timeRemaining">—</span></div>
+  </div>
+  <div class="next-up" id="nextUp">Next: <strong>—</strong></div>
+</div>
+
+<!-- ADD TASK MODAL -->
+<div class="modal-overlay" id="addModalOverlay">
+  <div class="modal">
+    <h2>New Task</h2>
+    <div class="form-row">
+      <label class="form-label">Task Name</label>
+      <input class="form-input" id="inputName" placeholder="e.g. Deep Work" type="text" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">Lane</label>
+      <select class="form-input" id="inputLane">
+        <option value="Focus">Focus</option>
+        <option value="Admin">Admin</option>
+        <option value="Creative">Creative</option>
+        <option value="Break">Break</option>
+        <option value="Comms">Comms</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Block Color</label>
+      <div class="color-swatch-grid" id="addColorPicker"></div>
+      <div class="hex-row">
+        <div class="hex-preview" id="addHexPreview" style="background:#515E60"></div>
+        <input class="form-input" id="addHexInput" type="text" value="#515E60" style="width:120px" />
+        <span style="font-family:var(--serif);font-size:11px;color:var(--text-dim);font-style:italic">hex</span>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Thumbnail</label>
+      <div class="thumb-upload-area" onclick="triggerThumbUpload('add')">
+        <div class="thumb-preview-box" id="addThumbPreview"><span class="x-placeholder">✕</span></div>
+        <div class="thumb-upload-text">Click to upload<br><small>PNG · JPG · GIF · WebP</small></div>
+        <button class="thumb-clear-btn" id="addThumbClear" onclick="clearThumb('add',event)">✕ Clear</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAddModal()">Cancel</button>
+      <button class="btn-confirm" onclick="addTask()">Add to Queue</button>
+    </div>
+  </div>
+</div>
+
+<!-- PREFERENCES MODAL -->
+<div class="modal-overlay" id="prefModalOverlay">
+  <div class="modal">
+    <h2>Task Preferences</h2>
+    <div class="form-row">
+      <label class="form-label">Task Name</label>
+      <input class="form-input" id="prefName" type="text" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">Duration — <span id="prefDurReadout" style="font-family:var(--gothic)">25 min</span></label>
+      <div class="dur-slider-wrap">
+        <input type="range" class="dur-slider" id="prefDurSlider" min="1" max="300" step="1" value="25"
+               oninput="document.getElementById('prefDurReadout').textContent=this.value+' min'" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Block Color</label>
+      <div class="color-swatch-grid" id="prefColorPicker"></div>
+      <div class="hex-row">
+        <div class="hex-preview" id="prefHexPreview" style="background:#515E60"></div>
+        <input class="form-input" id="prefHexInput" type="text" style="width:120px" />
+        <span style="font-family:var(--serif);font-size:11px;color:var(--text-dim);font-style:italic">hex</span>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Thumbnail</label>
+      <div class="thumb-upload-area" onclick="triggerThumbUpload('pref')">
+        <div class="thumb-preview-box" id="prefThumbPreview"><span class="x-placeholder">✕</span></div>
+        <div class="thumb-upload-text">Click to replace<br><small>PNG · JPG · GIF · WebP</small></div>
+        <button class="thumb-clear-btn" id="prefThumbClear" onclick="clearThumb('pref',event)">✕ Clear</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closePrefModal()">Cancel</button>
+      <button class="btn-confirm" onclick="savePrefs()">Save</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="thumbFileInput"     accept="image/*" onchange="handleThumbUpload(event,'add')" />
+<input type="file" id="prefThumbFileInput" accept="image/*" onchange="handleThumbUpload(event,'pref')" />
+
+<script>
+// ═══════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════
+const DEFAULT_COLOR = '#515E60';
+const PX_PER_MIN   = 4;          // pixels per minute — 24h = 5760px
+const TOTAL_MINS   = 24 * 60;    // ruler spans 24 hours
+const LANE_OFFSET  = 120;        // px for lane labels
+const LANE_ORDER   = ['Focus','Admin','Creative','Comms','Break'];
+const LANE_COLORS  = { Focus:'#2a4a50', Admin:'#4a3010', Creative:'#4a0a28', Comms:'#0a2a4a', Break:'#2a1a48' };
+const PRESET_COLORS = ['#515E60','#2a4a50','#4a3010','#4a0a28','#0a2a4a','#2a1a48','#1a3a1a','#4a1a10','#3a2a10','#0a3a3a'];
+
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let tasks = [
+  { id:1, name:'Morning Review',  duration:15, lane:'Admin',    color:DEFAULT_COLOR, thumb:null, done:false },
+  { id:2, name:'Deep Work Block', duration:50, lane:'Focus',    color:DEFAULT_COLOR, thumb:null, done:false },
+  { id:3, name:'Email & Comms',   duration:20, lane:'Comms',    color:DEFAULT_COLOR, thumb:null, done:false },
+  { id:4, name:'Creative Sprint', duration:30, lane:'Creative', color:DEFAULT_COLOR, thumb:null, done:false },
+  { id:5, name:'Break',           duration:10, lane:'Break',    color:DEFAULT_COLOR, thumb:null, done:false },
+  { id:6, name:'Review & Wrap',   duration:15, lane:'Admin',    color:DEFAULT_COLOR, thumb:null, done:false },
+];
+let nextId = 7;
+let addPendingColor = DEFAULT_COLOR;
+let addPendingThumb = null;
+let prefEditIndex   = -1;
+let prefPendingColor = DEFAULT_COLOR;
+let prefPendingThumb = null;
+
+// Playback
+let playing        = false;
+let currentIdx     = 0;
+let playStartTime  = null;
+let accTaskSecs    = 0;
+let accTotalSecs   = 0;
+let rafId          = null;
+let lastWholeSec   = -1;
+
+// Block drag state
+let dragTask = null, dragTaskIdx = -1, dragOffsetX = 0, dragOrigLeft = 0, dragLaneEl = null;
+
+// ═══════════════════════════════════════
+//  PLAYBACK
+// ═══════════════════════════════════════
+function getLiveTaskSecs() {
+  return (!playing || !playStartTime) ? accTaskSecs : accTaskSecs + (performance.now()-playStartTime)/1000;
+}
+function getLiveTotalSecs() {
+  return (!playing || !playStartTime) ? accTotalSecs : accTotalSecs + (performance.now()-playStartTime)/1000;
+}
+function getPlayheadX() {
+  let mins=0;
+  for(let i=0;i<currentIdx;i++) mins+=tasks[i].duration;
+  mins += getLiveTaskSecs()/60;
+  return LANE_OFFSET + mins*PX_PER_MIN;
+}
+function updatePlayheadDOM() {
+  const x=getPlayheadX();
+  const sp=document.getElementById('seqPlayhead'), rp=document.getElementById('rulerPlayhead');
+  if(sp) sp.style.left=x+'px';
+  if(rp) rp.style.left=x+'px';
+}
+function rafLoop() {
+  if(!playing) return;
+  updatePlayheadDOM();
+  const ws=Math.floor(getLiveTotalSecs());
+  if(ws!==lastWholeSec){ lastWholeSec=ws; tickSecond(); }
+  rafId=requestAnimationFrame(rafLoop);
+}
+function tickSecond() {
+  if(currentIdx>=tasks.length) return;
+  const elapsed=getLiveTaskSecs(), taskSecs=tasks[currentIdx].duration*60;
+  if(elapsed>=taskSecs){
+    tasks[currentIdx].done=true; currentIdx++; accTaskSecs=0; playStartTime=performance.now();
+    if(currentIdx>=tasks.length){ endSession(); return; }
+    render(); return;
+  }
+  refreshNowPlaying(); refreshTimeDisplay();
+}
+function endSession() {
+  playing=false; cancelAnimationFrame(rafId);
+  setBtnStates();
+  document.getElementById('nowName').textContent='Session Complete';
+  document.getElementById('nowSub').textContent='All tasks done.';
+  document.getElementById('nextUp').innerHTML='Next: <strong>—</strong>';
+  render();
+}
+
+// Play = start or resume
+function pressPlay() {
+  if(!tasks.length) return;
+  if(playing) return; // already playing
+  playing=true; playStartTime=performance.now();
+  rafId=requestAnimationFrame(rafLoop);
+  setBtnStates(); renderQueue();
+}
+// Pause = freeze (not reset)
+function pressPause() {
+  if(!playing) return;
+  const seg=(performance.now()-playStartTime)/1000;
+  accTaskSecs+=seg; accTotalSecs+=seg;
+  playing=false; playStartTime=null;
+  cancelAnimationFrame(rafId);
+  setBtnStates(); renderQueue();
+}
+function setBtnStates() {
+  document.getElementById('btnPlay').classList.toggle('active', playing);
+  document.getElementById('btnPause').classList.toggle('active', !playing && accTotalSecs>0);
+}
+function jumpToTask(index) {
+  tasks.forEach((t,i)=>{ t.done=i<index; });
+  currentIdx=index; accTaskSecs=0;
+  if(playing) playStartTime=performance.now();
+  render();
+}
+
+function refreshNowPlaying() {
+  if(currentIdx>=tasks.length) return;
+  const cur=tasks[currentIdx], elapsed=getLiveTaskSecs(), taskSecs=cur.duration*60;
+  const pct=Math.min((elapsed/taskSecs)*100,100);
+  document.getElementById('nowName').textContent=cur.name;
+  document.getElementById('nowSub').textContent=`${cur.lane} · ${cur.duration} min`;
+  document.getElementById('progressFill').style.width=pct+'%';
+  document.getElementById('progressFill').style.background=cur.color;
+  const es=Math.floor(elapsed/60)+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
+  const rs=Math.floor((taskSecs-elapsed)/60)+':'+String(Math.floor((taskSecs-elapsed)%60)).padStart(2,'0');
+  document.getElementById('timeElapsed').textContent=es;
+  document.getElementById('timeRemaining').textContent='-'+rs;
+  const next=tasks[currentIdx+1];
+  document.getElementById('nextUp').innerHTML=next?`Next: <strong>${next.name}</strong>`:'Next: <strong>—</strong>';
+  const nt=document.getElementById('nowThumb');
+  nt.style.borderColor=cur.color;
+  nt.innerHTML=cur.thumb?`<img src="${cur.thumb}" alt="">`:`<span class="x-placeholder">✕</span>`;
+  document.querySelectorAll('.wave-bar').forEach(b=>b.style.background=cur.color);
+}
+function refreshTimeDisplay() {
+  const t=getLiveTotalSecs();
+  document.getElementById('timeDisplay').textContent=
+    String(Math.floor(t/3600)).padStart(2,'0')+':'+
+    String(Math.floor((t%3600)/60)).padStart(2,'0')+':'+
+    String(Math.floor(t%60)).padStart(2,'0');
+}
+
+// ═══════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════
+function render() { renderQueue(); renderLanes(); updateCounts(); refreshNowPlaying(); }
+
+function thumbHTML(task) {
+  return task.thumb ? `<img src="${task.thumb}" alt="">` : `<span class="x-placeholder">✕</span>`;
+}
+
+function renderQueue() {
+  const list=document.getElementById('queueList');
+  if(!tasks.length){
+    list.innerHTML='<div class="empty-state"><div class="empty-icon">✕</div><div class="empty-text">No tasks yet</div></div>';
+    return;
+  }
+  list.innerHTML='';
+  tasks.forEach((t,i)=>{
+    const el=document.createElement('div');
+    el.className='queue-item'+(i===currentIdx&&playing?' active':'')+(t.done?' completed':'');
+    el.draggable=true;
+    el.innerHTML=`
+      <div class="drag-handle">⠿</div>
+      <div class="queue-thumb">${thumbHTML(t)}</div>
+      <div class="item-info">
+        <div class="task-name">${t.name}</div>
+        <div class="task-meta">${t.lane} · ${t.duration}min</div>
+      </div>
+      <button class="delete-btn" onclick="removeTask(${i},event)">✕</button>
+    `;
+    el.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',i));
+    el.addEventListener('dragover',e=>e.preventDefault());
+    el.addEventListener('drop',e=>{
+      e.preventDefault();
+      const from=+e.dataTransfer.getData('text/plain');
+      if(from!==i) reorderTask(from,i);
+    });
+    el.addEventListener('click',e=>{ if(!e.target.closest('.delete-btn')) jumpToTask(i); });
+    list.appendChild(el);
+  });
+}
+
+function renderLanes() {
+  const container=document.getElementById('laneRows');
+  container.innerHTML='';
+  // Total width = 24 hours
+  const totalW = TOTAL_MINS*PX_PER_MIN + LANE_OFFSET + 40;
+  document.getElementById('seqInner').style.minWidth=totalW+'px';
+  // Also size graph paper overlay
+  const gp=document.getElementById('graphPaper');
+  gp.style.width=totalW+'px';
+
+  LANE_ORDER.forEach(lane=>{
+    if(!tasks.some(t=>t.lane===lane)) return;
+    const row=document.createElement('div'); row.className='lane-row';
+    row.innerHTML=`
+      <div class="lane-label">
+        <div class="lane-color-bar" style="background:${LANE_COLORS[lane]||'#333'}"></div>
+        <span class="lane-label-text">${lane}</span>
+      </div>
+      <div class="lane-content" id="lane-${lane}"></div>
+    `;
+    container.appendChild(row);
+    const content=row.querySelector('.lane-content');
+    // Place blocks starting at minute 0
+    let offset=0;
+    tasks.forEach((t,gi)=>{
+      if(t.lane!==lane) return;
+      const block=document.createElement('div');
+      block.className='task-block'+(gi===currentIdx&&playing?' current':'')+(t.done?' done':'');
+      const w=Math.max(t.duration*PX_PER_MIN-2,20);
+      block.style.cssText=`left:${offset*PX_PER_MIN}px;width:${w}px;background:${t.color};`;
+      block.dataset.taskIdx=gi;
+
+      // Star button
+      const starBtn=document.createElement('button');
+      starBtn.className='block-prefs-btn'; starBtn.title='Preferences'; starBtn.textContent='★';
+      starBtn.addEventListener('click',e=>{ e.stopPropagation(); openPrefModal(gi); });
+
+      block.innerHTML=`
+        <div class="block-thumb">${thumbHTML(t)}</div>
+        <div class="block-text">
+          <span class="block-label">${t.name}</span>
+          <span class="block-duration">${t.duration}m</span>
+        </div>
+      `;
+      block.appendChild(starBtn);
+
+      // Block drag-to-reorder within lane
+      block.addEventListener('mousedown', e=>{
+        if(e.target.closest('.block-prefs-btn')) return;
+        e.preventDefault();
+        dragTask=t; dragTaskIdx=gi; dragLaneEl=content;
+        dragOffsetX=e.clientX-block.getBoundingClientRect().left;
+        dragOrigLeft=offset*PX_PER_MIN;
+        block.classList.add('dragging');
+        block.style.zIndex=20;
+        const onMove=mv=>{
+          const rect=content.getBoundingClientRect();
+          const newLeft=mv.clientX-rect.left-dragOffsetX;
+          block.style.left=Math.max(0,newLeft)+'px';
+        };
+        const onUp=()=>{
+          block.classList.remove('dragging');
+          block.style.zIndex='';
+          // Snap to nearest minute position
+          const newLeft=parseInt(block.style.left)||0;
+          const newMins=Math.round(newLeft/PX_PER_MIN);
+          // Find insertion position by comparing newMins to other lane offsets
+          let laneOff=0, insertBefore=-1;
+          const laneTasks=tasks.map((tt,ii)=>({t:tt,i:ii})).filter(x=>x.t.lane===lane);
+          for(let k=0;k<laneTasks.length;k++){
+            if(newMins<=laneOff && laneTasks[k].i!==gi){ insertBefore=laneTasks[k].i; break; }
+            laneOff+=laneTasks[k].t.duration;
+          }
+          if(insertBefore>=0 && insertBefore!==gi) reorderTask(gi,insertBefore);
+          else render();
+          document.removeEventListener('mousemove',onMove);
+          document.removeEventListener('mouseup',onUp);
+        };
+        document.addEventListener('mousemove',onMove);
+        document.addEventListener('mouseup',onUp);
+      });
+
+      block.addEventListener('click',e=>{
+        if(e.target.closest('.block-prefs-btn')) return;
+        jumpToTask(gi);
+      });
+      content.appendChild(block);
+      offset+=t.duration;
+    });
+  });
+  drawGrid(); updatePlayheadDOM();
+}
+
+function updateCounts() {
+  const done=tasks.filter(t=>t.done).length;
+  document.getElementById('queueCount').textContent=tasks.length?`${done}/${tasks.length}`:'—';
+  document.getElementById('progressCount').textContent=`${done} / ${tasks.length}`;
+}
+
+// ═══════════════════════════════════════
+//  CANVAS — RULER (24h, marks at each hour)
+// ═══════════════════════════════════════
+function drawRuler() {
+  const canvas=document.getElementById('rulerCanvas');
+  const dpr=window.devicePixelRatio||1;
+  const viewW=window.innerWidth, h=32;
+  // We'll make the canvas scrollable-wide
+  const totalW=TOTAL_MINS*PX_PER_MIN+LANE_OFFSET+40;
+  canvas.width=totalW*dpr; canvas.height=h*dpr;
+  canvas.style.width=totalW+'px'; canvas.style.height=h+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  ctx.fillStyle='#6a9099'; ctx.fillRect(0,0,totalW,h);
+  ctx.font='9px "IM Fell English",Georgia,serif'; ctx.textAlign='center';
+
+  for(let m=0;m<=TOTAL_MINS;m+=5){
+    const x=LANE_OFFSET+m*PX_PER_MIN;
+    const isHour=m%60===0, isHalf=m%30===0;
+    let tickTop=h, tickH=isHour?14:isHalf?10:7;
+    ctx.beginPath(); ctx.moveTo(x,h-tickH); ctx.lineTo(x,h);
+    ctx.strokeStyle=isHour?'rgba(0,0,0,0.5)':isHalf?'rgba(0,0,0,0.3)':'rgba(0,0,0,0.12)';
+    ctx.lineWidth=isHour?1.5:1; ctx.stroke();
+    if(isHour){
+      const hr=m/60;
+      ctx.fillStyle='rgba(0,0,0,0.55)';
+      ctx.fillText(hr+'h', x, 11);
+    }
+  }
+}
+
+function drawGrid() {
+  const canvas=document.getElementById('gridCanvas');
+  if(!canvas) return;
+  const totalW=TOTAL_MINS*PX_PER_MIN+LANE_OFFSET+40;
+  const h=LANE_ORDER.filter(l=>tasks.some(t=>t.lane===l)).length*72||360;
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=totalW*dpr; canvas.height=h*dpr;
+  canvas.style.width=totalW+'px'; canvas.style.height=h+'px';
+  canvas.style.left=LANE_OFFSET+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  for(let m=0;m<=TOTAL_MINS;m+=15){
+    const x=m*PX_PER_MIN, isHour=m%60===0;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h);
+    ctx.strokeStyle=isHour?'rgba(0,0,0,0.1)':'rgba(0,0,0,0.04)';
+    ctx.lineWidth=isHour?1:0.5; ctx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════
+//  GRID TOGGLE
+// ═══════════════════════════════════════
+function toggleGrid() {
+  const on=document.getElementById('gridToggle').checked;
+  document.getElementById('graphPaper').classList.toggle('visible',on);
+}
+
+// ═══════════════════════════════════════
+//  WAVEFORM
+// ═══════════════════════════════════════
+function buildWaveform() {
+  const el=document.getElementById('waveform');
+  [12,18,8,24,16,20,10,22,14,18,8,20,16,24,12].forEach((h,i)=>{
+    const b=document.createElement('div');
+    b.className='wave-bar'; b.style.height=h+'px';
+    b.style.animationDelay=(i*0.07)+'s';
+    b.style.animationDuration=(0.6+Math.random()*0.5)+'s';
+    el.appendChild(b);
+  });
+}
+
+// ═══════════════════════════════════════
+//  COLOR PICKER
+// ═══════════════════════════════════════
+function buildColorPicker(gridId, hexInId, hexPrevId, current) {
+  const el=document.getElementById(gridId); el.innerHTML='';
+  PRESET_COLORS.forEach(hex=>{
+    const s=document.createElement('div');
+    s.className='color-swatch'+(hex===current?' selected':'');
+    s.style.background=hex;
+    s.onclick=()=>{
+      el.querySelectorAll('.color-swatch').forEach(x=>x.classList.remove('selected'));
+      s.classList.add('selected');
+      document.getElementById(hexInId).value=hex;
+      document.getElementById(hexPrevId).style.background=hex;
+      if(gridId==='addColorPicker') addPendingColor=hex; else prefPendingColor=hex;
+    };
+    el.appendChild(s);
+  });
+  document.getElementById(hexInId).oninput=function(){
+    const v=this.value.trim();
+    if(/^#[0-9a-fA-F]{6}$/.test(v)){
+      document.getElementById(hexPrevId).style.background=v;
+      el.querySelectorAll('.color-swatch').forEach(x=>x.classList.remove('selected'));
+      if(gridId==='addColorPicker') addPendingColor=v; else prefPendingColor=v;
+    }
+  };
+}
+
+// ═══════════════════════════════════════
+//  THUMB UPLOAD
+// ═══════════════════════════════════════
+function triggerThumbUpload(ctx) {
+  document.getElementById(ctx==='add'?'thumbFileInput':'prefThumbFileInput').click();
+}
+function handleThumbUpload(e,ctx) {
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const data=ev.target.result;
+    if(ctx==='add'){
+      addPendingThumb=data;
+      document.getElementById('addThumbPreview').innerHTML=`<img src="${data}" alt="">`;
+      document.getElementById('addThumbClear').classList.add('visible');
+    } else {
+      prefPendingThumb=data;
+      document.getElementById('prefThumbPreview').innerHTML=`<img src="${data}" alt="">`;
+      document.getElementById('prefThumbClear').classList.add('visible');
+    }
+  };
+  reader.readAsDataURL(file); e.target.value='';
+}
+function clearThumb(ctx,e) {
+  e.stopPropagation();
+  if(ctx==='add'){
+    addPendingThumb=null;
+    document.getElementById('addThumbPreview').innerHTML='<span class="x-placeholder">✕</span>';
+    document.getElementById('addThumbClear').classList.remove('visible');
+  } else {
+    prefPendingThumb='clear';
+    document.getElementById('prefThumbPreview').innerHTML='<span class="x-placeholder">✕</span>';
+    document.getElementById('prefThumbClear').classList.remove('visible');
+  }
+}
+
+// ═══════════════════════════════════════
+//  ADD MODAL
+// ═══════════════════════════════════════
+function openAddModal() {
+  document.getElementById('inputName').value='';
+  addPendingColor=DEFAULT_COLOR; addPendingThumb=null;
+  document.getElementById('addThumbPreview').innerHTML='<span class="x-placeholder">✕</span>';
+  document.getElementById('addThumbClear').classList.remove('visible');
+  document.getElementById('addHexInput').value=DEFAULT_COLOR;
+  document.getElementById('addHexPreview').style.background=DEFAULT_COLOR;
+  buildColorPicker('addColorPicker','addHexInput','addHexPreview',DEFAULT_COLOR);
+  document.getElementById('addModalOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('inputName').focus(),100);
+}
+function closeAddModal() { document.getElementById('addModalOverlay').classList.remove('open'); }
+function addTask() {
+  const name=document.getElementById('inputName').value.trim();
+  const lane=document.getElementById('inputLane').value;
+  if(!name){ document.getElementById('inputName').focus(); return; }
+  tasks.push({ id:nextId++, name, duration:25, lane, color:addPendingColor, thumb:addPendingThumb, done:false });
+  closeAddModal(); render(); drawRuler();
+}
+
+// ═══════════════════════════════════════
+//  PREFS MODAL
+// ═══════════════════════════════════════
+function openPrefModal(index) {
+  prefEditIndex=index;
+  const t=tasks[index]; prefPendingColor=t.color; prefPendingThumb=null;
+  document.getElementById('prefName').value=t.name;
+  const slider=document.getElementById('prefDurSlider');
+  slider.value=t.duration;
+  document.getElementById('prefDurReadout').textContent=t.duration+' min';
+  document.getElementById('prefHexInput').value=t.color;
+  document.getElementById('prefHexPreview').style.background=t.color;
+  const pp=document.getElementById('prefThumbPreview');
+  if(t.thumb){
+    pp.innerHTML=`<img src="${t.thumb}" alt="">`;
+    document.getElementById('prefThumbClear').classList.add('visible');
+  } else {
+    pp.innerHTML='<span class="x-placeholder">✕</span>';
+    document.getElementById('prefThumbClear').classList.remove('visible');
+  }
+  buildColorPicker('prefColorPicker','prefHexInput','prefHexPreview',t.color);
+  document.getElementById('prefModalOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('prefName').focus(),100);
+}
+function closePrefModal() { document.getElementById('prefModalOverlay').classList.remove('open'); }
+function savePrefs() {
+  if(prefEditIndex<0) return;
+  const t=tasks[prefEditIndex];
+  const name=document.getElementById('prefName').value.trim();
+  const dur=parseInt(document.getElementById('prefDurSlider').value)||t.duration;
+  if(!name){ document.getElementById('prefName').focus(); return; }
+  t.name=name; t.duration=dur; t.color=prefPendingColor;
+  if(prefPendingThumb==='clear') t.thumb=null;
+  else if(prefPendingThumb) t.thumb=prefPendingThumb;
+  closePrefModal(); render(); drawRuler();
+}
+
+// ═══════════════════════════════════════
+//  TASK MANAGEMENT
+// ═══════════════════════════════════════
+function removeTask(index,event) {
+  event.stopPropagation();
+  tasks.splice(index,1);
+  if(currentIdx>=tasks.length) currentIdx=Math.max(0,tasks.length-1);
+  render(); drawRuler();
+}
+function reorderTask(from,to) {
+  const moved=tasks.splice(from,1)[0];
+  tasks.splice(to,0,moved);
+  if(currentIdx===from) currentIdx=to;
+  render();
+}
+
+// ═══════════════════════════════════════
+//  KEYBOARD
+// ═══════════════════════════════════════
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if(e.code==='Space'){ e.preventDefault(); playing?pressPause():pressPlay(); }
+  if(e.code==='Escape'){ closeAddModal(); closePrefModal(); }
+  if(e.code==='KeyN') openAddModal();
+});
+document.getElementById('addModalOverlay').addEventListener('click',e=>{
+  if(e.target===document.getElementById('addModalOverlay')) closeAddModal();
+});
+document.getElementById('prefModalOverlay').addEventListener('click',e=>{
+  if(e.target===document.getElementById('prefModalOverlay')) closePrefModal();
+});
+document.getElementById('inputName').addEventListener('keydown',e=>{ if(e.key==='Enter') addTask(); });
+document.getElementById('prefName').addEventListener('keydown',e=>{ if(e.key==='Enter') savePrefs(); });
+window.addEventListener('resize',()=>{ drawRuler(); drawGrid(); });
+
+// Keep ruler in sync with scroll
+document.getElementById('seqWrap').addEventListener('scroll',function(){
+  document.getElementById('rulerCanvas').style.left=(-this.scrollLeft)+'px';
+  document.getElementById('rulerPlayhead').style.left=(getPlayheadX()-this.scrollLeft)+'px';
+});
+
+// ═══════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════
+buildWaveform();
+render();
+drawRuler();
+</script>
+</body>
+</html>
