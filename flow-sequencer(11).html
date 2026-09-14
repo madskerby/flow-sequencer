@@ -758,7 +758,7 @@
     </div>
     <div class="form-row">
       <label class="form-label">Notes <span style="text-transform:none;font-weight:400;font-style:italic;opacity:0.7">— what's this about? why are you doing it? what's the goal?</span></label>
-      <textarea class="form-input" id="inputNotes" rows="2" placeholder="e.g. My neck's been tight — do neck stretches before squats"></textarea>
+      <textarea class="form-input" id="inputNotes" rows="2" placeholder="write anything here"></textarea>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeAddModal()">Cancel</button>
@@ -803,7 +803,7 @@
     </div>
     <div class="form-row">
       <label class="form-label">Notes <span style="text-transform:none;font-weight:400;font-style:italic;opacity:0.7">— any flavor text, intentions, reminders</span></label>
-      <textarea class="form-input" id="prefNotes" rows="2" placeholder="e.g. My neck's been tight — do neck stretches before squats"></textarea>
+      <textarea class="form-input" id="prefNotes" rows="2" placeholder="write anything here"></textarea>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePrefModal()">Cancel</button>
@@ -1026,7 +1026,7 @@ function refreshNowPlaying() {
   const idx=getCurrentActiveIndex();
   if(idx===-1){
     document.getElementById('nowName').textContent='—';
-    document.getElementById('nowSub').textContent = active.length ? 'Press play to begin' : 'Drag a block into the DAW to begin your flow';
+    document.getElementById('nowSub').textContent = active.length ? 'press play 2 start flow' : 'drag activity blocks into the live session area to visualize your flow';
     document.getElementById('progressFill').style.width='0%';
     document.getElementById('nextUp').innerHTML='Next: <strong>—</strong>';
     return;
