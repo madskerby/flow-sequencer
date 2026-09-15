@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow Sequencer</title>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&family=IM+Fell+English:ital@0;1&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* bone / canvas / muslin ONLY for structure — no other hue in backgrounds.
+       color touches limited to: dove grey, soft blue-grey, faded cornflower.
+       indigo is this project's black — never pure black. change appearance module for
+       color customization.*/
+    --bg-base:      #eee9db;
+    --bg-panel:     #ddd5c1;
+    --bg-card:      #f3efe3;
+    --bg-hover:     rgba(33,27,61,0.07);
+    --bg-active:    rgba(75,63,232,0.13);
+    --border:       rgba(33,27,61,0.28);
+    --border-light: rgba(33,27,61,0.45);
+    --text-primary:   #211c3d;
+    --text-secondary: #423a68;
+    --text-dim:       #71698f;
+    --accent:         #211c3d;
+    --accent-dark:    #100d1e;
+    --indigo:         #4B3FE8;
+    --indigo-dim:     rgba(75,63,232,0.4);
+    --dove:           #9a948b;
+    --blue-gray:      #8592a2;
+    --cornflower:     #93a6cf;
+    --block-default:  #9a948b;
+    --playhead:       var(--indigo);
+    --scrub-bg:       #ddd5c1;
+    --gothic:  'UnifrakturMaguntia', serif;
+    --display: 'Fraunces', serif;
+    --serif:   'IM Fell English', Georgia, serif;
+    --sans:    'Inter', -apple-system, sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { height:100%; margin:0; }
+  body {
+    background: var(--bg-base); color: var(--text-primary);
+    font-family: var(--sans);
+    height:100vh; height:100dvh; margin:0; display:flex; flex-direction:column;
+    overflow:hidden; user-select:none;
+  }
+  .tabular { font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1; }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    display:flex; align-items:center; gap:12px;
+    padding:0 16px; height:50px;
+    background:var(--bg-panel); border-bottom:2px solid var(--border);
+    flex-shrink:0;
+  }
+  .logo { font-family:var(--gothic); font-size:21px; color:var(--indigo); line-height:1; }
+  .tag-stamp {
+    font-family:var(--sans); font-size:9px; font-weight:600; letter-spacing:0.04em;
+    color:var(--text-dim); border:2px solid var(--border); border-radius:2px;
+    padding:2px 5px; line-height:1; flex-shrink:0;
+  }
+  .divider-v { width:2px; height:24px; background:var(--border); flex-shrink:0; }
+
+  /* ── CIRCLE TRANSPORT BUTTONS ── */
+  .transport { display:flex; align-items:center; gap:8px; }
+  .circ-btn {
+    width:26px; height:26px; border-radius:50%;
+    background:var(--bg-card); border:1.5px solid var(--border);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background 0.1s, border-color 0.1s; flex-shrink:0; padding:0;
+    color:var(--text-secondary); font-size:10px; line-height:1;
+  }
+  .circ-btn:hover { background:rgba(75,63,232,0.08); border-color:var(--indigo-dim); }
+  .circ-btn.active { background:var(--indigo); border-color:var(--indigo); color:var(--bg-base); }
+  /* play SVG triangle */
+  .circ-btn .play-shape {
+    width:0; height:0;
+    border-top:5px solid transparent;
+    border-bottom:5px solid transparent;
+    border-left:8px solid var(--text-secondary);
+    margin-left:2px;
+  }
+  .circ-btn.active .play-shape { border-left-color:var(--bg-base); }
+  /* pause bars */
+  .circ-btn .pause-shape {
+    display:flex; gap:3px; align-items:center; height:12px;
+  }
+  .circ-btn .pause-bar {
+    width:2.5px; height:11px; background:var(--text-secondary); border-radius:0;
+  }
+  .circ-btn.active .pause-bar { background:var(--bg-base); }
+
+  .time-display {
+    background:var(--scrub-bg); border:2px solid var(--border);
+    border-radius:2px; padding:4px 10px;
+    font-family:var(--sans); font-weight:600; font-size:13px; letter-spacing:0.02em;
+    font-variant-numeric:tabular-nums;
+    color:var(--accent); min-width:88px; text-align:center;
+  }
+  .bpm-display {
+    background:var(--scrub-bg); border:2px solid var(--border);
+    border-radius:2px; padding:4px 8px;
+    font-family:var(--sans); font-weight:500; font-size:10px; color:var(--text-secondary);
+    font-variant-numeric:tabular-nums;
+  }
+  .session-name {
+    font-family:var(--display); font-weight:500; font-style:italic; font-size:15px;
+    color:var(--text-dim); flex:1; text-align:center;
+    cursor:text; outline:none; border-radius:2px; padding:2px 8px;
+    transition:background 0.15s;
+  }
+  .session-name:hover { background:rgba(33,27,61,0.05); }
+  .session-name:focus { background:rgba(75,63,232,0.07); color:var(--text-primary); }
+
+  /* Grid toggle switch */
+  .grid-toggle-wrap {
+    display:flex; align-items:center; gap:7px;
+    font-family:var(--sans); font-size:10px; font-weight:500; letter-spacing:0.03em;
+    text-transform:uppercase; color:var(--text-dim); flex-shrink:0;
+  }
+  .toggle-switch {
+    position:relative; width:32px; height:16px; cursor:pointer;
+  }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-track {
+    position:absolute; inset:0; background:transparent;
+    border-radius:2px; border:2px solid var(--border);
+    transition:background 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-track { background:rgba(23,20,15,0.15); }
+  .toggle-thumb {
+    position:absolute; width:10px; height:10px; border-radius:1px;
+    background:var(--text-primary); top:2px; left:2px; transition:left 0.2s;
+  }
+  .toggle-switch input:checked ~ .toggle-thumb { left:19px; background:var(--indigo); }
+
+  .btn-add-task {
+    background:var(--bg-card); border:2px solid var(--border);
+    color:var(--text-primary); padding:6px 16px; border-radius:2px;
+    font-family:var(--display); font-weight:600; font-size:13px;
+    cursor:pointer; transition:background 0.12s; white-space:nowrap; flex-shrink:0;
+  }
+  .btn-add-task:hover { background:rgba(75,63,232,0.09); border-color:var(--indigo-dim); }
+
+  /* ── RULER ── */
+  .ruler-wrap {
+    height:32px; background:var(--scrub-bg);
+    border-bottom:2px solid var(--border);
+    position:relative; flex-shrink:0; overflow:hidden;
+  }
+  .ruler-canvas { position:absolute; top:0; left:0; width:100%; height:100%; }
+
+  /* ── MAIN ── */
+  .main { display:flex; flex:1; overflow:hidden; }
+
+  /* ── QUEUE PANEL ── */
+  .queue-panel {
+    width:260px; flex-shrink:0;
+    background:var(--bg-panel); border-right:2px solid var(--border);
+    display:flex; flex-direction:column; overflow:hidden;
+    position:relative;
+    transition:width 0.18s ease;
+  }
+  .queue-panel.collapsed { width:46px; }
+  .queue-panel.storage-hover { box-shadow: inset 0 0 0 2px var(--indigo); }
+  .queue-panel.collapsed .queue-list,
+  .queue-panel.collapsed .panel-header > span:first-child,
+  .queue-panel.collapsed #queueCount { display:none; }
+  .queue-panel.collapsed .panel-header { justify-content:center; padding:9px 4px; }
+  .queue-collapse-btn {
+    background:transparent; border:2px solid var(--border); color:var(--text-secondary);
+    font-family:var(--sans); font-weight:600; font-size:9.5px; letter-spacing:0.03em; text-transform:uppercase;
+    padding:3px 7px; border-radius:1px; cursor:pointer; white-space:nowrap;
+  }
+  .queue-collapse-btn:hover { background:rgba(75,63,232,0.08); border-color:var(--indigo-dim); }
+  /* reference photo, very low opacity, stretched to fill — not a pattern, just a ghost of the material */
+  .queue-panel::before {
+    content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+    background-image:url(data:image/jpeg;base64,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);
+    background-size:100% 100%;
+    background-repeat:no-repeat;
+    opacity:0.09;
+    filter:grayscale(0.4);
+  }
+  .panel-header, .queue-list { position:relative; z-index:1; }
+  .panel-header {
+    padding:9px 14px; border-bottom:none; position:relative;
+    display:flex; align-items:center; justify-content:space-between;
+    font-family:var(--display); font-weight:600; font-size:15px; color:var(--text-dim); flex-shrink:0;
+  }
+  .panel-header::after {
+    content:''; position:absolute; left:0; right:0; bottom:-3px; height:7px;
+    background-image: repeating-linear-gradient(
+        98deg,
+        var(--accent) 0px, var(--accent) 2px,
+        transparent 2px, transparent 11px
+      );
+    opacity:0.55; pointer-events:none;
+  }
+  .queue-list {
+    flex:1; overflow-y:auto; padding:7px;
+    display:flex; flex-direction:column; gap:4px;
+  }
+  .queue-list { scrollbar-width:thin; scrollbar-color:rgba(33,27,61,0.3) var(--bg-panel); }
+  .queue-list::-webkit-scrollbar { width:4px; }
+  .queue-list::-webkit-scrollbar-track { background:var(--bg-panel); }
+  .queue-list::-webkit-scrollbar-thumb { background:rgba(33,27,61,0.3); border-radius:2px; }
+
+  .queue-item {
+    background:rgba(133,146,162,0.16); border:2px solid var(--border);
+    border-radius:2px; padding:8px 9px;
+    cursor:grab; position:relative; overflow:hidden;
+    transition:background 0.12s, border-color 0.12s; display:flex; align-items:center; gap:8px;
+    backdrop-filter: blur(0.5px);
+  }
+  .queue-item:hover { background:rgba(133,146,162,0.28); border-color:var(--border-light); }
+  .queue-item.active { background:var(--bg-active); border-color:var(--indigo); border-left-width:3px; }
+  .queue-item.active .task-name::after { content:' —\00a0playing'; font-size:9px; font-style:italic; opacity:0.65; font-family:var(--serif); }
+  .queue-item.completed { opacity:0.4; }
+  .queue-item.completed .task-name { text-decoration:line-through; color:var(--text-dim); }
+
+  .queue-thumb {
+    width:30px; height:30px; border-radius:2px; flex-shrink:0;
+    background:rgba(33,27,61,0.08); border:2px solid var(--border);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .queue-thumb img { width:100%; height:100%; object-fit:cover; border-radius:1px; }
+  .x-placeholder { font-size:14px; font-weight:300; color:rgba(33,27,61,0.3); font-family:var(--sans); line-height:1; }
+
+  .item-info { flex:1; min-width:0; }
+  .task-name {
+    font-family:var(--display); font-weight:500; font-size:13.5px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-primary);
+  }
+  .task-meta { font-family:var(--serif); font-style:italic; font-size:10px; color:var(--text-dim); margin-top:1px; }
+  .task-notes {
+    font-family:var(--serif); font-style:italic; font-size:10px; color:var(--text-secondary);
+    margin-top:3px; opacity:0.85; overflow:hidden; text-overflow:ellipsis;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+  }
+  textarea.form-input { resize:vertical; font-family:var(--serif); font-style:italic; min-height:44px; }
+  .drag-handle { color:var(--text-dim); font-size:10px; cursor:grab; padding:2px; flex-shrink:0; }
+  .delete-btn {
+    background:transparent; border:none; color:var(--text-dim);
+    cursor:pointer; font-size:12px; padding:3px 5px;
+    border-radius:2px; transition:color 0.15s; flex-shrink:0; font-family:var(--sans);
+  }
+  .delete-btn:hover { color:var(--indigo); }
+
+  /* ── SEQUENCE ── */
+  .sequence-view { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .seq-canvas-wrap {
+    flex:1; overflow-x:auto; overflow-y:auto;
+    position:relative; background:var(--bg-base);
+  }
+  .seq-canvas-wrap { scrollbar-width:thin; scrollbar-color:rgba(33,27,61,0.3) var(--bg-base); }
+  .seq-canvas-wrap::-webkit-scrollbar { height:6px; width:6px; }
+  .seq-canvas-wrap::-webkit-scrollbar-track { background:var(--bg-base); }
+  .seq-canvas-wrap::-webkit-scrollbar-thumb { background:rgba(33,27,61,0.3); border-radius:3px; }
+  .seq-inner { position:relative; min-height:100%; }
+
+  /* graph-paper grid overlay */
+  .graph-paper {
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    background-image:
+      linear-gradient(rgba(33,27,61,0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(33,27,61,0.07) 1px, transparent 1px);
+    background-size: 18px 18px;
+    background-position: 0 0;
+    display:none;
+  }
+  .graph-paper.visible { display:block; }
+
+  /* Flow Zone — free canvas. No row structure: blocks place anywhere,
+     horizontal position is the only thing that means anything (time). */
+  .flow-zone-canvas { position:relative; height:360px; z-index:2; }
+
+  /* ── TASK BLOCKS ── */
+  .task-block {
+    position:absolute; top:10px; height:52px;
+    border-radius:1px;
+    border:2px solid rgba(33,27,61,0.35);
+    overflow:hidden; cursor:grab;
+    transition:border-color 0.12s, opacity 0.12s;
+    display:flex; align-items:center; padding:0; gap:0;
+  }
+  .task-block:hover { border-color:var(--text-primary); }
+  .task-block.current {
+    border:2px solid var(--indigo);
+    box-shadow: inset 0 0 0 1px var(--indigo);
+  }
+  .task-block.done { opacity:0.35; filter:grayscale(0.5); }
+  .task-block.dragging { opacity:0.5; cursor:grabbing; }
+
+  .block-thumb {
+    width:32px; height:52px; flex-shrink:0;
+    background:rgba(33,27,61,0.15);
+    border-right:2px solid rgba(33,27,61,0.2);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .block-thumb img { width:100%; height:100%; object-fit:cover; }
+  .block-thumb .x-placeholder { font-size:16px; }
+
+  .block-text { flex:1; min-width:0; padding:0 6px; }
+  .block-label {
+    font-family:var(--display); font-weight:600; font-size:13px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display:block; color:var(--text-primary);
+  }
+  .block-duration {
+    font-family:var(--sans); font-weight:500; font-size:9px; font-variant-numeric:tabular-nums;
+    color:var(--text-secondary); display:block; margin-top:1px; opacity:0.75;
+  }
+
+  /* ── STAR BUTTON — back to the circle, as requested ── */
+  .block-prefs-btn {
+    width:22px; height:22px; flex-shrink:0; margin-right:6px;
+    background:transparent;
+    border:2px solid var(--text-primary);
+    border-radius:50%;
+    cursor:pointer; color:var(--text-primary);
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; line-height:1;
+    transition:background 0.12s;
+    font-family:var(--sans); position:relative; z-index:2;
+  }
+  .block-prefs-btn:hover { background:rgba(33,27,61,0.14); }
+  .block-delete-btn {
+    position:absolute; top:3px; right:3px; z-index:3;
+    width:15px; height:15px; border-radius:50%; padding:0;
+    background:rgba(255,255,255,0.35); border:1px solid rgba(33,27,61,0.4);
+    color:var(--text-primary); font-family:var(--sans); font-size:8px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .block-delete-btn:hover { background:var(--indigo); color:#fff; border-color:var(--indigo); }
+
+  /* Playhead — thin ink needle, no glow */
+  .playhead-line {
+    position:absolute; top:0; bottom:0; width:2px;
+    background:var(--playhead); opacity:0.7;
+    z-index:10; pointer-events:none;
+  }
+  .playhead-line::before {
+    content:''; position:absolute; top:0;
+    left:50%; transform:translateX(-50%);
+    width:9px; height:9px; background:var(--playhead);
+    clip-path:polygon(50% 100%, 0% 0%, 100% 0%);
+  }
+  /* ── playhead skin variants, toggled via classes on #appRoot ── */
+  #appRoot.ph-line-dashed .playhead-line { background:transparent;
+    background-image:repeating-linear-gradient(180deg, var(--playhead) 0 7px, transparent 7px 13px); }
+  #appRoot.ph-line-dotted .playhead-line { background:transparent;
+    background-image:repeating-linear-gradient(180deg, var(--playhead) 0 2px, transparent 2px 6px); }
+  #appRoot.ph-line-double .playhead-line { width:5px; background:transparent;
+    background-image:linear-gradient(90deg, var(--playhead) 0 1.5px, transparent 1.5px 3.5px, var(--playhead) 3.5px 5px); }
+  #appRoot.ph-flag-diamond .playhead-line::before { clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%); width:8px; height:8px; top:-1px; }
+  #appRoot.ph-flag-circle .playhead-line::before { clip-path:none; border-radius:50%; width:8px; height:8px; top:-1px; }
+  #appRoot.ph-flag-none .playhead-line::before { display:none; }
+
+  .grid-lines {
+    position:absolute; top:0; left:0; right:0; bottom:0;
+    pointer-events:none; z-index:0;
+  }
+
+  /* ── NOW PLAYING ── */
+  .now-playing {
+    height:72px; background:var(--bg-panel); border-top:2px solid var(--border);
+    display:flex; align-items:center; padding:0 20px; gap:18px; flex-shrink:0;
+    position:relative;
+  }
+  /* whip-stitch seam: a baseline with evenly-spaced diagonal thread crossings — WIP, see chat */
+  .now-playing::before {
+    content:''; position:absolute; top:-3px; left:0; right:0; height:7px;
+    background-image: repeating-linear-gradient(
+        98deg,
+        var(--accent) 0px, var(--accent) 2px,
+        transparent 2px, transparent 11px
+      );
+    opacity:0.6;
+  }
+  .now-label-group { display:flex; flex-direction:column; gap:3px; flex-shrink:0; max-width:150px; }
+  .now-status {
+    font-family:var(--sans); font-weight:600; font-size:9.5px; letter-spacing:0.04em; text-transform:uppercase;
+    color:var(--text-dim);
+  }
+  .now-status.active { color:var(--indigo); }
+  .now-label { font-family:var(--display); font-weight:600; font-size:15px; color:var(--text-primary); line-height:1.15; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .flow-tag {
+    font-family:var(--sans); font-weight:500; font-size:9.5px; color:var(--text-dim);
+    white-space:nowrap; letter-spacing:0.01em;
+  }
+  .flow-tag.tabular { color:var(--text-secondary); font-weight:600; }
+  /* Oscilloscope — purely decorative, freezes whenever the flow is paused */
+  .waveform-mini {
+    width:96px; height:28px; flex-shrink:0;
+    -webkit-mask-image:linear-gradient(90deg, transparent 0%, black 18%, black 82%, transparent 100%);
+    mask-image:linear-gradient(90deg, transparent 0%, black 18%, black 82%, transparent 100%);
+  }
+  .waveform-mini #scopePath { fill:none; stroke:var(--indigo); stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .now-thumb {
+    width:44px; height:44px; border-radius:2px; flex-shrink:0;
+    background:rgba(33,27,61,0.1); border:2px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden; transition:border-color 0.3s;
+  }
+  .now-thumb img { width:100%; height:100%; object-fit:cover; border-radius:1px; }
+  .now-thumb .x-placeholder { font-size:20px; }
+  .now-task-info { flex:1; }
+  .now-task-name { font-family:var(--display); font-weight:600; font-size:17px; color:var(--text-primary); }
+  .now-task-sub { font-family:var(--serif); font-size:11px; font-style:italic; color:var(--text-secondary); margin-top:2px; }
+  .progress-wrap { flex:2; display:flex; flex-direction:column; gap:6px; }
+  .progress-bar-bg { height:7px; background:rgba(33,27,61,0.08); border-radius:0; overflow:hidden; border:2px solid var(--border); }
+  .progress-bar-fill { height:100%; background:var(--indigo); border-radius:0; transition:width 0.3s linear; }
+  .progress-times { display:flex; justify-content:space-between; font-family:var(--sans); font-size:10px; font-variant-numeric:tabular-nums; color:var(--text-dim); }
+  .next-up { font-family:var(--serif); font-size:10px; font-style:italic; color:var(--text-dim); white-space:nowrap; }
+  .next-up strong { font-style:normal; font-family:var(--display); font-weight:600; color:var(--text-secondary); }
+
+  /* ── ETHER — permanent deletion zone ── */
+  .ether-zone {
+    height:96px; flex-shrink:0; display:flex; align-items:center; justify-content:center; gap:10px;
+    background:linear-gradient(180deg, var(--accent-dark), #06050c);
+    border-top:2px solid var(--border);
+    transition:background 0.2s;
+    position:relative;
+  }
+  .ether-label { font-family:var(--gothic); font-size:21px; color:var(--indigo); letter-spacing:0.03em; line-height:1; }
+  .ether-info-btn {
+    width:20px; height:20px; border-radius:50%; border:1.5px solid var(--indigo); background:transparent;
+    color:var(--indigo); font-family:var(--gothic); font-size:13px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0;
+  }
+  .ether-info-btn:hover { background:rgba(75,63,232,0.15); }
+  .ether-tooltip {
+    display:none; position:absolute; bottom:100%; left:50%; transform:translateX(-50%); margin-bottom:10px;
+    background:#4a4560; color:#ece9f5; font-family:var(--sans); font-size:11.5px; padding:8px 13px;
+    border-radius:3px; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,0.35); z-index:5;
+  }
+  .ether-info-btn:hover ~ .ether-tooltip, .ether-tooltip.open { display:block; }
+  .ether-zone.ether-hover { background:linear-gradient(180deg, var(--indigo), #1c1740); }
+  .ether-zone.ether-hover .ether-label { color:#fff; }
+
+  /* ── MODALS ── */
+  .modal-overlay {
+    display:none; position:fixed; inset:0;
+    background:rgba(15,13,9,0.55); z-index:100;
+    align-items:center; justify-content:center;
+  }
+  .modal-overlay.open { display:flex; }
+  .modal {
+    background:var(--bg-card);
+    border-style:solid; border-width:5px;
+    border-image-source:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M1,1 L9,9 M9,1 L1,9' stroke='%23211c3d' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+    border-image-slice:5; border-image-repeat:round; border-image-width:5px;
+    border-radius:2px; width:440px; padding:26px;
+    box-shadow:0 1px 0 var(--border); max-height:90vh; overflow-y:auto;
+  }
+  .modal h2 { font-family:var(--display); font-weight:600; font-size:20px; color:var(--text-primary); margin-bottom:20px; }
+  .form-row { margin-bottom:16px; }
+  .form-label { font-family:var(--sans); font-weight:600; font-size:10px; letter-spacing:0.04em; text-transform:uppercase; color:var(--text-dim); display:block; margin-bottom:7px; }
+  .form-input {
+    width:100%; background:rgba(33,27,61,0.06); border:2px solid var(--border);
+    border-radius:1px; padding:8px 12px;
+    font-family:var(--serif); font-style:italic; font-size:13px;
+    color:var(--text-primary); outline:none; transition:border-color 0.15s;
+  }
+  .form-input:focus { border-color:var(--accent); }
+  select.form-input { cursor:pointer; font-style:normal; font-family:var(--sans); }
+  option { background:var(--bg-panel); }
+
+  /* Duration slider */
+  .dur-slider-wrap { display:flex; flex-direction:column; gap:6px; }
+  .dur-slider {
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:2px; border-radius:0;
+    background:var(--border-light); outline:none; cursor:pointer;
+    accent-color:var(--indigo);
+  }
+  .dur-slider::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none;
+    width:13px; height:13px; border-radius:50%;
+    background:var(--text-primary); cursor:pointer; border:2px solid var(--bg-card);
+  }
+  .dur-slider::-moz-range-thumb {
+    width:13px; height:13px; border-radius:50%;
+    background:var(--text-primary); cursor:pointer; border:2px solid var(--bg-card);
+  }
+  .dur-readout {
+    font-family:var(--sans); font-weight:600; font-size:14px; font-variant-numeric:tabular-nums;
+    color:var(--text-primary); text-align:center;
+  }
+
+  /* Color swatches */
+  .color-swatch-grid { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:8px; }
+  .color-swatch {
+    width:26px; height:26px; border-radius:1px;
+    border:2px solid var(--border); cursor:pointer; position:relative;
+    transition:border-color 0.1s;
+  }
+  .color-swatch:hover { border-color:var(--text-primary); }
+  .color-swatch.selected { border:2px solid var(--indigo); }
+  .color-swatch.selected::after {
+    content:'✓'; position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; color:#fff; font-family:var(--sans);
+    text-shadow:0 1px 2px rgba(33,27,61,0.7);
+  }
+  .hex-row { display:flex; gap:8px; align-items:center; }
+  .hex-preview { width:30px; height:30px; border-radius:1px; border:2px solid var(--border); flex-shrink:0; }
+  .free-color-picker { width:30px; height:30px; border:2px solid var(--border); border-radius:1px; cursor:pointer; padding:0; background:none; flex-shrink:0; }
+
+  /* Thumb upload */
+  .thumb-upload-area {
+    border:2px solid var(--border); border-radius:1px;
+    padding:12px; display:flex; align-items:center; gap:12px;
+    cursor:pointer; transition:border-color 0.15s;
+  }
+  .thumb-upload-area:hover { border-color:var(--accent); }
+  .thumb-preview-box {
+    width:48px; height:48px; border-radius:1px; flex-shrink:0;
+    background:rgba(33,27,61,0.1); border:2px solid var(--border);
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .thumb-preview-box img { width:100%; height:100%; object-fit:cover; border-radius:0; }
+  .thumb-preview-box .x-placeholder { font-size:20px; }
+  .thumb-upload-text { flex:1; font-family:var(--serif); font-size:11px; font-style:italic; color:var(--text-secondary); line-height:1.6; }
+  .thumb-clear-btn {
+    background:transparent; border:2px solid var(--border); color:var(--text-dim);
+    font-size:10px; padding:3px 8px; border-radius:1px; cursor:pointer;
+    transition:all 0.15s; display:none; font-family:var(--sans);
+  }
+  .thumb-clear-btn:hover { color:var(--indigo); border-color:var(--indigo-dim); }
+  .thumb-clear-btn.visible { display:block; }
+
+  .modal-actions { display:flex; gap:10px; margin-top:22px; justify-content:flex-end; }
+  .btn-cancel {
+    background:transparent; border:2px solid var(--border); color:var(--text-secondary);
+    padding:7px 18px; border-radius:1px; font-family:var(--display); font-weight:600; font-size:13px; cursor:pointer; transition:all 0.15s;
+  }
+  .btn-cancel:hover { border-color:var(--border-light); color:var(--text-primary); }
+  .btn-confirm {
+    background:var(--accent); border:2px solid var(--accent); color:var(--bg-base);
+    padding:7px 18px; border-radius:1px; font-family:var(--display); font-weight:600; font-size:13px; cursor:pointer; transition:all 0.15s;
+  }
+  .btn-confirm:hover { background:var(--accent-dark); }
+
+  .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:14px; }
+  .empty-text { font-family:var(--display); font-weight:500; font-style:italic; font-size:14px; color:var(--text-dim); }
+  .empty-add-btn {
+    width:44px; height:44px; border-radius:50%; background:var(--bg-card); border:2px solid var(--border);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .empty-add-btn .embossed-text { font-family:var(--display); font-weight:600; font-size:22px; color:var(--text-primary); line-height:1; }
+
+  #thumbFileInput, #prefThumbFileInput { display:none; }
+
+  /* ── EMBOSSED / PRESSED-PAPER TREATMENT ──
+     text-shadow pair (dark upper-left, light lower-right) = engraved into the canvas.
+     box-shadow pair (inset dark upper-left, inset light lower-right) = a pressed disc/tab. */
+  .embossed-text {
+    text-shadow: -1px -1px 0 rgba(255,255,255,0.75), 1px 1px 1px rgba(33,27,61,0.45);
+  }
+  .embossed-surface {
+    box-shadow: inset 1.5px 1.5px 2px rgba(33,27,61,0.3), inset -1.5px -1.5px 1.5px rgba(255,255,255,0.7);
+  }
+
+  /* ── APPEARANCE / SKIN PANEL — lives outside #appRoot, always shows true anchor colors ── */
+  #appRoot { transition: filter 0.1s linear; display:flex; flex-direction:column; height:100%; min-height:0; }
+  .skin-fab {
+    position:fixed; right:20px; bottom:20px; z-index:200;
+    background:none; border:none; padding:0;
+    font-family:var(--display); font-weight:600; font-size:14px; color:var(--bg-card);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.55), 0 0 1px rgba(0,0,0,0.4);
+    cursor:pointer;
+  }
+  .skin-panel {
+    display:none; position:fixed; right:18px; bottom:64px; z-index:200;
+    width:250px; background:var(--bg-card); border:2px solid var(--accent);
+    border-radius:2px; padding:16px; box-shadow:0 8px 24px rgba(33,27,61,0.3);
+    max-height:80vh; overflow-y:auto;
+  }
+  .skin-panel.open { display:block; }
+  .skin-section-label {
+    font-family:var(--sans); font-weight:600; font-size:10px; letter-spacing:0.05em; text-transform:uppercase;
+    color:var(--text-dim); border-top:2px solid var(--border); margin:14px 0 10px; padding-top:10px;
+  }
+  .skin-panel > .skin-section-label:first-of-type { margin-top:12px; }
+  .skin-select {
+    width:100%; background:rgba(33,27,61,0.06); border:2px solid var(--border);
+    border-radius:1px; padding:5px 8px; font-family:var(--sans); font-size:12px; color:var(--text-primary);
+    cursor:pointer;
+  }
+  .ph-swatch-row { display:flex; align-items:center; gap:6px; }
+  .ph-swatch {
+    width:20px; height:20px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+  }
+  .ph-swatch.active { border-color:var(--text-primary); }
+  #phCustomColor { width:22px; height:22px; border:none; background:none; cursor:pointer; padding:0; }
+  .skin-panel-header {
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--display); font-weight:600; font-size:15px; color:var(--text-primary);
+    margin-bottom:6px;
+  }
+  .skin-close { background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:12px; }
+  .skin-panel-sub { font-family:var(--sans); font-style:normal; font-size:11px; color:var(--text-dim); line-height:1.45; margin-bottom:14px; }
+  .skin-row { margin-bottom:12px; }
+  .skin-row label {
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--sans); font-weight:600; font-size:10px; letter-spacing:0.03em; text-transform:uppercase;
+    color:var(--text-secondary); margin-bottom:5px;
+  }
+  .skin-readout { font-weight:500; text-transform:none; color:var(--text-dim); font-variant-numeric:tabular-nums; }
+  .skin-row input[type="range"] {
+    -webkit-appearance:none; appearance:none; width:100%; height:2px;
+    background:var(--border-light); outline:none; cursor:pointer; accent-color:var(--indigo);
+  }
+  .skin-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none; width:12px; height:12px; border-radius:50%;
+    background:var(--indigo); cursor:pointer; border:2px solid var(--bg-card);
+  }
+  .skin-reset {
+    width:100%; background:transparent; border:2px solid var(--border); color:var(--text-secondary);
+    padding:6px; border-radius:1px; font-family:var(--sans); font-weight:600; font-size:11px;
+    cursor:pointer; margin-top:2px;
+  }
+  .skin-reset:hover { border-color:var(--accent); color:var(--text-primary); }
+</style>
+</head>
+<body>
+
+<div id="appRoot">
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo embossed-text">Flow</div>
+  <div class="tag-stamp embossed-surface"><span class="embossed-text">N&deg;01</span></div>
+  <div class="divider-v"></div>
+  <div class="transport">
+    <!-- Play button -->
+    <button class="circ-btn embossed-surface" id="btnPlay" title="Play (Space)" onclick="pressPlay()">
+      <span class="play-shape" id="playShape"></span>
+    </button>
+    <!-- Pause button -->
+    <button class="circ-btn embossed-surface" id="btnPause" title="Pause" onclick="pressPause()">
+      <span class="pause-shape"><span class="pause-bar"></span><span class="pause-bar"></span></span>
+    </button>
+  </div>
+  <div class="divider-v"></div>
+  <div class="time-display tabular" id="timeDisplay">00:00:00</div>
+  <div class="bpm-display" id="progressCount">0 / 0</div>
+  <div class="session-name" id="sessionName" contenteditable="true" spellcheck="false" title="Click to rename your flow">Session — Flow State</div>
+  <button class="btn-add-task embossed-surface" onclick="openAddModal()"><span class="embossed-text">✦ Add Activity Time Block</span></button>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="queue-panel" id="queuePanel">
+    <div class="panel-header">
+      <span>Storage</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="queueCount" style="font-family:var(--serif);font-size:12px">—</span>
+        <button class="queue-collapse-btn" id="queueCollapseBtn" onclick="toggleQueueCollapse()">Hide</button>
+      </div>
+    </div>
+    <div class="queue-list" id="queueList"></div>
+  </div>
+  <div class="sequence-view">
+    <!-- RULER — lives inside sequence-view now, so its x=0 matches the lane content's x=0 -->
+    <div class="ruler-wrap">
+      <canvas class="ruler-canvas" id="rulerCanvas"></canvas>
+      <div class="playhead-line" id="rulerPlayhead" style="left:0px"></div>
+    </div>
+    <div class="seq-canvas-wrap" id="seqWrap">
+      <div class="seq-inner" id="seqInner">
+        <canvas class="grid-lines" id="gridCanvas"></canvas>
+        <div class="graph-paper" id="graphPaper"></div>
+        <div id="flowZone" class="flow-zone-canvas"></div>
+        <div class="playhead-line" id="seqPlayhead" style="left:0px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NOW PLAYING -->
+<div class="now-playing">
+  <div class="now-label-group">
+    <div class="now-label" id="nowLabel">Session — Flow State</div>
+    <div class="now-status" id="flowStatus">Flow Break</div>
+    <div class="flow-tag" id="flowStartedTag">Flow not yet started</div>
+    <div class="flow-tag tabular" id="flowDurationTag">00:00:00</div>
+  </div>
+  <svg class="waveform-mini" id="waveform" viewBox="0 0 96 28" preserveAspectRatio="none">
+    <path id="scopePath" d="M0,14 L96,14" />
+  </svg>
+  <div class="now-thumb" id="nowThumb"><span class="x-placeholder">✕</span></div>
+  <div class="now-task-info">
+    <div class="now-task-name" id="nowName">—</div>
+    <div class="now-task-sub" id="nowSub">Start a session to begin your flow</div>
+  </div>
+  <div class="progress-wrap">
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="progress-times"><span id="timeElapsed">0:00</span><span id="timeRemaining">—</span></div>
+  </div>
+  <div class="next-up" id="nextUp">Next: <strong>—</strong></div>
+</div>
+
+<!-- THE ETHER — drag a block here (or hit its x) to release it for good -->
+<div class="ether-zone" id="etherZone">
+  <span class="ether-label embossed-text">Ether</span>
+  <button class="ether-info-btn" id="etherInfoBtn" onclick="toggleEtherInfo(event)">?</button>
+  <div class="ether-tooltip" id="etherTooltip">drag blocks here to let them go forever.</div>
+</div>
+
+<!-- ADD TASK MODAL -->
+<div class="modal-overlay" id="addModalOverlay">
+  <div class="modal">
+    <h2>New Task</h2>
+    <div class="form-row">
+      <label class="form-label">Task Name</label>
+      <input class="form-input" id="inputName" placeholder="e.g. Deep Work" type="text" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">Category</label>
+      <select class="form-input" id="inputLane">
+        <option value="Focused Work">Focused Work</option>
+        <option value="Meditation">Meditation</option>
+        <option value="Sound Work">Sound Work</option>
+        <option value="Exercise &amp; Stretch">Exercise &amp; Stretch</option>
+        <option value="Social Time">Social Time</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Duration — <span id="inputDurReadout" class="tabular" style="font-family:var(--sans);font-weight:600;text-transform:none;letter-spacing:0">25 min</span></label>
+      <div class="dur-slider-wrap">
+        <input type="range" class="dur-slider" id="inputDurSlider" min="1" max="300" step="1" value="25"
+               oninput="document.getElementById('inputDurReadout').textContent=this.value+' min'" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Block Color</label>
+      <div class="color-swatch-grid" id="addColorPicker"></div>
+      <div class="hex-row">
+        <input type="color" class="free-color-picker" id="addFreeColor" value="#9a948b"
+               oninput="addPendingColor=this.value; document.getElementById('addHexInput').value=this.value; document.getElementById('addHexPreview').style.background=this.value;">
+        <div class="hex-preview" id="addHexPreview" style="background:#9a948b"></div>
+        <input class="form-input" id="addHexInput" type="text" value="#9a948b" style="width:100px" />
+        <span style="font-family:var(--serif);font-size:11px;color:var(--text-dim);font-style:italic">hex</span>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Thumbnail</label>
+      <div class="thumb-upload-area" onclick="triggerThumbUpload('add')">
+        <div class="thumb-preview-box" id="addThumbPreview"><span class="x-placeholder">✕</span></div>
+        <div class="thumb-upload-text">Click to upload<br><small>PNG · JPG · GIF · WebP</small></div>
+        <button class="thumb-clear-btn" id="addThumbClear" onclick="clearThumb('add',event)">✕ Clear</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Notes <span style="text-transform:none;font-weight:400;font-style:italic;opacity:0.7">— what's this about? why are you doing it? what's the goal?</span></label>
+      <textarea class="form-input" id="inputNotes" rows="2" placeholder="e.g. My neck's been tight — do neck stretches before squats"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeAddModal()">Cancel</button>
+      <button class="btn-confirm" onclick="addTask()">Add to Storage</button>
+    </div>
+  </div>
+</div>
+
+<!-- PREFERENCES MODAL -->
+<div class="modal-overlay" id="prefModalOverlay">
+  <div class="modal">
+    <h2>Task Preferences</h2>
+    <div class="form-row">
+      <label class="form-label">Task Name</label>
+      <input class="form-input" id="prefName" type="text" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">Duration — <span id="prefDurReadout" class="tabular" style="font-family:var(--sans);font-weight:600;text-transform:none;letter-spacing:0">25 min</span></label>
+      <div class="dur-slider-wrap">
+        <input type="range" class="dur-slider" id="prefDurSlider" min="1" max="300" step="1" value="25"
+               oninput="document.getElementById('prefDurReadout').textContent=this.value+' min'" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Block Color</label>
+      <div class="color-swatch-grid" id="prefColorPicker"></div>
+      <div class="hex-row">
+        <input type="color" class="free-color-picker" id="prefFreeColor" value="#9a948b"
+               oninput="prefPendingColor=this.value; document.getElementById('prefHexInput').value=this.value; document.getElementById('prefHexPreview').style.background=this.value;">
+        <div class="hex-preview" id="prefHexPreview" style="background:#9a948b"></div>
+        <input class="form-input" id="prefHexInput" type="text" style="width:100px" />
+        <span style="font-family:var(--serif);font-size:11px;color:var(--text-dim);font-style:italic">hex</span>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Thumbnail</label>
+      <div class="thumb-upload-area" onclick="triggerThumbUpload('pref')">
+        <div class="thumb-preview-box" id="prefThumbPreview"><span class="x-placeholder">✕</span></div>
+        <div class="thumb-upload-text">Click to replace<br><small>PNG · JPG · GIF · WebP</small></div>
+        <button class="thumb-clear-btn" id="prefThumbClear" onclick="clearThumb('pref',event)">✕ Clear</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Notes <span style="text-transform:none;font-weight:400;font-style:italic;opacity:0.7">— any flavor text, intentions, reminders</span></label>
+      <textarea class="form-input" id="prefNotes" rows="2" placeholder="e.g. My neck's been tight — do neck stretches before squats"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closePrefModal()">Cancel</button>
+      <button class="btn-confirm" onclick="savePrefs()">Save</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="thumbFileInput"     accept="image/*" onchange="handleThumbUpload(event,'add')" />
+<input type="file" id="prefThumbFileInput" accept="image/*" onchange="handleThumbUpload(event,'pref')" />
+</div><!-- /appRoot -->
+
+<!-- ═══ APPEARANCE / SKIN PANEL (Ableton-style tone control, outside appRoot's filter) ═══ -->
+<button class="skin-fab" id="skinFab" title="Customize Appearance" onclick="toggleSkinPanel()">
+  <span>Customize Appearance</span>
+</button>
+<div class="skin-panel" id="skinPanel">
+  <div class="skin-panel-header">
+    <span>Appearance</span>
+    <button class="skin-close" onclick="toggleSkinPanel()">✕</button>
+  </div>
+  <div class="skin-panel-sub">Everything you've built stays the anchor default — this just tunes your own view.</div>
+
+  <div class="skin-section-label">Palette</div>
+  <div class="skin-row">
+    <label>Hue<span class="skin-readout" id="hueReadout">0°</span></label>
+    <input type="range" id="hueSlider" min="-180" max="180" value="0" step="1" oninput="applySkin()">
+  </div>
+  <div class="skin-row">
+    <label>Saturation<span class="skin-readout" id="satReadout">100%</span></label>
+    <input type="range" id="satSlider" min="0" max="200" value="100" step="1" oninput="applySkin()">
+  </div>
+  <div class="skin-row">
+    <label>Lightness<span class="skin-readout" id="briReadout">100%</span></label>
+    <input type="range" id="briSlider" min="60" max="140" value="100" step="1" oninput="applySkin()">
+  </div>
+
+  <div class="skin-section-label">Playhead</div>
+  <div class="skin-row">
+    <label>Color<span class="skin-readout" id="phColorReadout">indigo</span></label>
+    <div class="ph-swatch-row">
+      <button class="ph-swatch active" data-color="#4B3FE8" style="background:#4B3FE8" onclick="setPhColor('#4B3FE8',this)" title="Indigo (default)"></button>
+      <button class="ph-swatch" data-color="#93a6cf" style="background:#93a6cf" onclick="setPhColor('#93a6cf',this)" title="Cornflower"></button>
+      <button class="ph-swatch" data-color="#8592a2" style="background:#8592a2" onclick="setPhColor('#8592a2',this)" title="Blue-grey"></button>
+      <button class="ph-swatch" data-color="#9a948b" style="background:#9a948b" onclick="setPhColor('#9a948b',this)" title="Dove"></button>
+      <input type="color" id="phCustomColor" value="#4B3FE8" oninput="setPhColor(this.value)" title="Custom">
+    </div>
+  </div>
+  <div class="skin-row">
+    <label>Line style</label>
+    <select id="phLineStyle" class="skin-select" onchange="applyPlayheadSkin()">
+      <option value="solid">Solid</option>
+      <option value="dashed">Dashed</option>
+      <option value="dotted">Dotted</option>
+      <option value="double">Double</option>
+    </select>
+  </div>
+  <div class="skin-row">
+    <label>Top shape</label>
+    <select id="phFlagShape" class="skin-select" onchange="applyPlayheadSkin()">
+      <option value="triangle">Triangle</option>
+      <option value="diamond">Diamond</option>
+      <option value="circle">Circle</option>
+      <option value="none">None</option>
+    </select>
+  </div>
+
+  <button class="skin-reset" onclick="resetSkin()">Reset everything to default</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════
+const DEFAULT_COLOR = '#c7c1b5';
+const PX_PER_MIN   = 4;          // pixels per minute — 24h = 5760px
+const TOTAL_MINS   = 24 * 60;    // ruler spans 24 hours
+const LANE_OFFSET  = 0;          // no reserved sidebar — timeline starts at 0
+const FLOW_ZONE_HEIGHT = 360;    // px — must match .flow-zone-canvas height
+const SNAP_THRESHOLD_MIN = 5;    // minutes — how close two block edges "magnetically" snap together
+// bone/canvas neutrals as the base, dove-grey / soft blue-grey / faded cornflower as the only color touches
+const PRESET_COLORS = ['#c7c1b5','#dccfab','#bdccdf','#c2c9d1','#d6c9a4','#9a948b','#a39a82','#8592a2','#efe8d6','#4B3FE8'];
+
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let tasks = [];
+let nextId = 1;
+let addPendingColor = DEFAULT_COLOR;
+let addPendingThumb = null;
+let prefEditIndex   = -1;
+let prefPendingColor = DEFAULT_COLOR;
+let prefPendingThumb = null;
+
+// Playback
+let sessionStartWallTime = null;
+let playing        = false;
+let playStartTime  = null;
+let accTaskSecs    = 0;   // unused now, kept only so any stray reference doesn't crash — see accTotalSecs
+let accTotalSecs   = 0;   // THE session clock, in seconds. Maps 1:1 to the ruler.
+let rafId          = null;
+let lastWholeSec   = -1;
+
+// Block drag state
+let dragTask = null, dragTaskIdx = -1, dragOffsetX = 0, dragOffsetY = 0, dragOrigLeft = 0;
+
+// ═══════════════════════════════════════
+//  STORAGE vs FLOW ZONE
+//  A task sits in Storage (t.placed=false) until dragged into Flow Zone
+//  (t.placed=true), where it carries an absolute startMin (minutes from
+//  timeline zero) and a free topPx (purely visual — no meaning). Play order
+//  and "done" state are both derived from time, never stored/advanced by hand.
+// ═══════════════════════════════════════
+function getActiveTasks() { return tasks.filter(t=>t.placed); }
+function getSortedActive() { return getActiveTasks().slice().sort((a,b)=>a.startMin-b.startMin); }
+function getCurrentTask() {
+  const rulerMin = getLiveTotalSecs()/60;
+  return getSortedActive().find(t => rulerMin>=t.startMin && rulerMin<t.startMin+t.duration) || null;
+}
+function isTaskDone(t) {
+  return t.placed && (getLiveTotalSecs()/60) >= (t.startMin + t.duration);
+}
+// Resolve where a task actually lands: snap to a nearby edge if close, or
+// get pushed clear of anything it would otherwise overlap. Time axis only —
+// vertical position is never touched by this.
+function resolvePlacement(taskId, desiredStartMin, duration) {
+  const others = tasks.filter(t=>t.placed && t.id!==taskId).map(t=>({start:t.startMin, end:t.startMin+t.duration}));
+  let start = Math.max(0, desiredStartMin);
+  // 1. magnetic snap to the closest nearby edge, if any is within the threshold
+  let bestDist=SNAP_THRESHOLD_MIN, bestSnap=null;
+  others.forEach(o=>{
+    const dStartToEnd=Math.abs(start-o.end);
+    if(dStartToEnd<bestDist){ bestDist=dStartToEnd; bestSnap=o.end; }
+    const dEndToStart=Math.abs((start+duration)-o.start);
+    if(dEndToStart<bestDist){ bestDist=dEndToStart; bestSnap=o.start-duration; }
+  });
+  if(bestSnap!==null) start=Math.max(0,bestSnap);
+  // 2. hard overlap resolution — push clear of whatever it still collides with
+  let guard=0, hit;
+  while((hit=others.find(o=> start<o.end && start+duration>o.start)) && guard<50){
+    const pushRight=hit.end, pushLeft=Math.max(0,hit.start-duration);
+    start = Math.abs(pushRight-start)<=Math.abs(pushLeft-start) ? pushRight : pushLeft;
+    guard++;
+  }
+  return start;
+}
+
+// ═══════════════════════════════════════
+//  PLAYBACK
+// ═══════════════════════════════════════
+function getLiveTaskSecs() {
+  const cur=getCurrentTask();
+  if(!cur) return 0;
+  return getLiveTotalSecs() - cur.startMin*60;
+}
+function getLiveTotalSecs() {
+  return (!playing || !playStartTime) ? accTotalSecs : accTotalSecs + (performance.now()-playStartTime)/1000;
+}
+function getPlayheadX() {
+  return LANE_OFFSET + (getLiveTotalSecs()/60)*PX_PER_MIN;
+}
+function updatePlayheadDOM() {
+  const x=getPlayheadX();
+  const sp=document.getElementById('seqPlayhead'), rp=document.getElementById('rulerPlayhead');
+  if(sp) sp.style.left=x+'px';
+  if(rp) rp.style.left=x+'px';
+}
+function rafLoop() {
+  if(!playing) return;
+  updatePlayheadDOM();
+  drawScope(performance.now()/260);
+  const ws=Math.floor(getLiveTotalSecs());
+  if(ws!==lastWholeSec){ lastWholeSec=ws; tickSecond(); }
+  rafId=requestAnimationFrame(rafLoop);
+}
+function tickSecond() {
+  const sorted=getSortedActive();
+  const last=sorted[sorted.length-1];
+  const rulerMin=getLiveTotalSecs()/60;
+  if(last && rulerMin>=last.startMin+last.duration){ endSession(); return; }
+  refreshNowPlaying(); refreshTimeDisplay();
+  render(); // cheap enough at 1/sec — keeps current/done block states in sync with time
+}
+function endSession() {
+  playing=false; cancelAnimationFrame(rafId);
+  setBtnStates();
+  document.getElementById('nowName').textContent='Session Complete';
+  document.getElementById('nowSub').textContent='All blocks done.';
+  document.getElementById('nextUp').innerHTML='Next: <strong>—</strong>';
+  render();
+}
+
+// Play = start or resume
+function pressPlay() {
+  if(!getActiveTasks().length) return; // nothing placed in Flow Zone yet
+  if(playing) return; // already playing
+  if(!sessionStartWallTime){
+    sessionStartWallTime=new Date();
+    document.getElementById('flowStartedTag').textContent='Flow started '+formatClock(sessionStartWallTime);
+    seedScope();
+  }
+  playing=true; playStartTime=performance.now();
+  rafId=requestAnimationFrame(rafLoop);
+  setBtnStates(); renderQueue();
+}
+// Pause = freeze (not reset)
+function pressPause() {
+  if(!playing) return;
+  const seg=(performance.now()-playStartTime)/1000;
+  accTotalSecs+=seg;
+  playing=false; playStartTime=null;
+  cancelAnimationFrame(rafId);
+  setBtnStates(); renderQueue();
+}
+function setBtnStates() {
+  document.getElementById('btnPlay').classList.toggle('active', playing);
+  document.getElementById('btnPause').classList.toggle('active', !playing && accTotalSecs>0);
+  const status=document.getElementById('flowStatus');
+  status.textContent = playing ? 'Active Flow Session' : 'Flow Break';
+  status.classList.toggle('active', playing);
+}
+function jumpToTask(taskId) {
+  const t=tasks.find(tt=>tt.id===taskId);
+  if(!t || !t.placed) return;
+  accTotalSecs=t.startMin*60;
+  if(playing) playStartTime=performance.now();
+  render();
+}
+
+function refreshNowPlaying() {
+  const cur=getCurrentTask();
+  if(!cur){
+    const active=getActiveTasks();
+    document.getElementById('nowName').textContent='—';
+    document.getElementById('nowSub').textContent = active.length ? "arrange blocks freely with or without space between them." : 'drag activity blocks into open zone to sequence them on a horizontal timeline. hit play 2 start your flowing.';
+    document.getElementById('progressFill').style.width='0%';
+    document.getElementById('nextUp').innerHTML='Next: <strong>—</strong>';
+    return;
+  }
+  const elapsed=getLiveTaskSecs(), taskSecs=cur.duration*60;
+  const pct=Math.min((elapsed/taskSecs)*100,100);
+  document.getElementById('nowName').textContent=cur.name;
+  document.getElementById('nowSub').textContent=`${cur.lane} · ${cur.duration} min`;
+  document.getElementById('progressFill').style.width=pct+'%';
+  const es=Math.floor(elapsed/60)+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
+  const rs=Math.floor((taskSecs-elapsed)/60)+':'+String(Math.floor((taskSecs-elapsed)%60)).padStart(2,'0');
+  document.getElementById('timeElapsed').textContent=es;
+  document.getElementById('timeRemaining').textContent='-'+rs;
+  const next=getSortedActive().find(t=>t.startMin>cur.startMin);
+  document.getElementById('nextUp').innerHTML=next?`Next: <strong>${next.name}</strong>`:'Next: <strong>—</strong>';
+  const nt=document.getElementById('nowThumb');
+  nt.style.borderColor=cur.color;
+  nt.innerHTML=cur.thumb?`<img src="${cur.thumb}" alt="">`:`<span class="x-placeholder">✕</span>`;
+}
+function formatHMS(t) {
+  return String(Math.floor(t/3600)).padStart(2,'0')+':'+
+    String(Math.floor((t%3600)/60)).padStart(2,'0')+':'+
+    String(Math.floor(t%60)).padStart(2,'0');
+}
+function formatClock(d) {
+  let h=d.getHours(); const m=String(d.getMinutes()).padStart(2,'0');
+  const ap=h>=12?'PM':'AM'; h=h%12; if(h===0) h=12;
+  return h+':'+m+' '+ap;
+}
+function refreshTimeDisplay() {
+  const hms=formatHMS(getLiveTotalSecs());
+  document.getElementById('timeDisplay').textContent=hms;
+  document.getElementById('flowDurationTag').textContent=hms;
+}
+
+// ═══════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════
+function render() { renderQueue(); renderFlowZone(); updateCounts(); refreshNowPlaying(); }
+
+function thumbHTML(task) {
+  return task.thumb ? `<img src="${task.thumb}" alt="">` : `<span class="x-placeholder">✕</span>`;
+}
+
+function renderQueue() {
+  const list=document.getElementById('queueList');
+  const unplaced = tasks.filter(t=>!t.placed);
+  if(!unplaced.length){
+    list.innerHTML=`
+      <div class="empty-state">
+        <div class="empty-text">Zero Activity Blocks</div>
+        <button class="empty-add-btn embossed-surface" onclick="openAddModal()" title="Create your first block">
+          <span class="embossed-text">+</span>
+        </button>
+      </div>`;
+    return;
+  }
+  list.innerHTML='';
+  tasks.forEach((t,i)=>{
+    if(t.placed) return; // only storage (unplaced) items render here
+    const el=document.createElement('div');
+    el.className='queue-item';
+    el.draggable=true;
+    el.innerHTML=`
+      <div class="drag-handle">⠿</div>
+      <div class="queue-thumb">${thumbHTML(t)}</div>
+      <div class="item-info">
+        <div class="task-name">${t.name}</div>
+        <div class="task-meta">${t.lane} · ${t.duration}min</div>
+        ${t.notes ? `<div class="task-notes">${t.notes}</div>` : ''}
+      </div>
+      <button class="delete-btn" onclick="permanentDelete(${t.id},event)">✕</button>
+    `;
+    el.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',i));
+    el.addEventListener('dragover',e=>e.preventDefault());
+    el.addEventListener('drop',e=>{
+      e.preventDefault();
+      const from=+e.dataTransfer.getData('text/plain');
+      if(from!==i) reorderTask(from,i);
+    });
+    el.addEventListener('click',e=>{ if(!e.target.closest('.delete-btn')) openPrefModal(i); });
+    list.appendChild(el);
+  });
+}
+
+function renderFlowZone() {
+  const zone=document.getElementById('flowZone');
+  zone.innerHTML='';
+  const totalW = TOTAL_MINS*PX_PER_MIN + LANE_OFFSET + 40;
+  document.getElementById('seqInner').style.minWidth=totalW+'px';
+  const gp=document.getElementById('graphPaper');
+  gp.style.width=totalW+'px';
+
+  const currentTask=getCurrentTask();
+
+  tasks.forEach((t,gi)=>{
+    if(!t.placed) return;
+    const isCurrent = currentTask && currentTask.id===t.id && playing;
+    const block=document.createElement('div');
+    block.className='task-block'+(isCurrent?' current':'')+(isTaskDone(t)?' done':'');
+    const w=Math.max(t.duration*PX_PER_MIN-2,20);
+    block.style.cssText=`left:${t.startMin*PX_PER_MIN}px;top:${t.topPx||20}px;width:${w}px;background:${t.color};`;
+    block.dataset.taskIdx=gi;
+
+    const starBtn=document.createElement('button');
+    starBtn.className='block-prefs-btn'; starBtn.title='Edit'; starBtn.textContent='★';
+    starBtn.addEventListener('click',e=>{ e.stopPropagation(); openPrefModal(gi); });
+
+    const delBtn=document.createElement('button');
+    delBtn.className='block-delete-btn'; delBtn.title='Delete forever'; delBtn.textContent='✕';
+    delBtn.addEventListener('click',e=>{ e.stopPropagation(); fadeThenDelete(block,t.id); });
+
+    block.innerHTML=`
+      <div class="block-thumb">${thumbHTML(t)}</div>
+      <div class="block-text">
+        <span class="block-label">${t.name}</span>
+        <span class="block-duration">${t.duration}m</span>
+      </div>
+    `;
+    block.appendChild(starBtn);
+    block.appendChild(delBtn);
+
+    // Free 2D drag within Flow Zone — X resolves against overlap/snap on drop,
+    // Y is purely wherever you leave it. Drag out to Storage or the Ether to
+    // un-place or delete instead of repositioning.
+    block.addEventListener('mousedown', e=>{
+      if(e.target.closest('.block-prefs-btn')||e.target.closest('.block-delete-btn')) return;
+      e.preventDefault();
+      dragTask=t; dragTaskIdx=gi;
+      const zoneRect=zone.getBoundingClientRect();
+      dragOffsetX=e.clientX-block.getBoundingClientRect().left;
+      dragOffsetY=e.clientY-block.getBoundingClientRect().top;
+      dragOrigLeft=t.startMin*PX_PER_MIN;
+      block.classList.add('dragging');
+      block.style.zIndex=20;
+      const storageEl=document.getElementById('queuePanel');
+      const etherEl=document.getElementById('etherZone');
+      const inRect=(x,y,el)=>{ const r=el.getBoundingClientRect(); return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom; };
+      const onMove=mv=>{
+        const r=zone.getBoundingClientRect();
+        const newLeft=Math.max(0, mv.clientX-r.left-dragOffsetX);
+        const newTop=Math.max(0, Math.min(FLOW_ZONE_HEIGHT-62, mv.clientY-r.top-dragOffsetY));
+        block.style.left=newLeft+'px';
+        block.style.top=newTop+'px';
+        etherEl.classList.toggle('ether-hover', inRect(mv.clientX,mv.clientY,etherEl));
+        storageEl.classList.toggle('storage-hover', inRect(mv.clientX,mv.clientY,storageEl));
+      };
+      const onUp=upEvent=>{
+        block.classList.remove('dragging');
+        block.style.zIndex='';
+        etherEl.classList.remove('ether-hover');
+        storageEl.classList.remove('storage-hover');
+        document.removeEventListener('mousemove',onMove);
+        document.removeEventListener('mouseup',onUp);
+
+        if(inRect(upEvent.clientX,upEvent.clientY,etherEl)){ fadeThenDelete(block,t.id); return; }
+        if(inRect(upEvent.clientX,upEvent.clientY,storageEl)){ unplaceTask(t.id); return; }
+
+        const newLeft=parseInt(block.style.left)||0;
+        const newTop=parseInt(block.style.top)||0;
+        const desiredStartMin=Math.round(newLeft/PX_PER_MIN);
+        t.startMin=resolvePlacement(t.id, desiredStartMin, t.duration);
+        t.topPx=newTop;
+        render();
+      };
+      document.addEventListener('mousemove',onMove);
+      document.addEventListener('mouseup',onUp);
+    });
+
+    block.addEventListener('click',e=>{
+      if(e.target.closest('.block-prefs-btn')||e.target.closest('.block-delete-btn')) return;
+      jumpToTask(t.id);
+    });
+    zone.appendChild(block);
+  });
+  drawGrid(); updatePlayheadDOM();
+}
+
+
+function updateCounts() {
+  const unplacedCount = tasks.filter(t=>!t.placed).length;
+  document.getElementById('queueCount').textContent = unplacedCount ? String(unplacedCount) : '—';
+  const active=getActiveTasks();
+  const done=active.filter(t=>isTaskDone(t)).length;
+  document.getElementById('progressCount').textContent=`${done} / ${active.length}`;
+}
+
+// ═══════════════════════════════════════
+//  CANVAS — RULER (24h, marks at each hour)
+// ═══════════════════════════════════════
+function drawRuler() {
+  const canvas=document.getElementById('rulerCanvas');
+  const dpr=window.devicePixelRatio||1;
+  const viewW=window.innerWidth, h=32;
+  // We'll make the canvas scrollable-wide
+  const totalW=TOTAL_MINS*PX_PER_MIN+LANE_OFFSET+40;
+  canvas.width=totalW*dpr; canvas.height=h*dpr;
+  canvas.style.width=totalW+'px'; canvas.style.height=h+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  ctx.fillStyle='#dcd5c1'; ctx.fillRect(0,0,totalW,h);
+  ctx.font='500 9px Inter, sans-serif'; ctx.textAlign='center';
+
+  for(let m=0;m<=TOTAL_MINS;m+=5){
+    const x=LANE_OFFSET+m*PX_PER_MIN;
+    const isHour=m%60===0, isHalf=m%30===0;
+    let tickTop=h, tickH=isHour?14:isHalf?10:7;
+    ctx.beginPath(); ctx.moveTo(x,h-tickH); ctx.lineTo(x,h);
+    ctx.strokeStyle=isHour?'rgba(33,27,61,0.55)':isHalf?'rgba(33,27,61,0.32)':'rgba(33,27,61,0.14)';
+    ctx.lineWidth=isHour?2:1.25; ctx.stroke();
+    if(isHour){
+      const hr=m/60;
+      ctx.fillStyle='rgba(33,27,61,0.6)';
+      ctx.fillText(hr+'h', x, 11);
+    }
+  }
+}
+
+function drawGrid() {
+  const canvas=document.getElementById('gridCanvas');
+  if(!canvas) return;
+  const totalW=TOTAL_MINS*PX_PER_MIN+LANE_OFFSET+40;
+  const h=FLOW_ZONE_HEIGHT;
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=totalW*dpr; canvas.height=h*dpr;
+  canvas.style.width=totalW+'px'; canvas.style.height=h+'px';
+  canvas.style.left=LANE_OFFSET+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  for(let m=0;m<=TOTAL_MINS;m+=15){
+    const x=m*PX_PER_MIN, isHour=m%60===0;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h);
+    ctx.strokeStyle=isHour?'rgba(33,27,61,0.1)':'rgba(33,27,61,0.04)';
+    ctx.lineWidth=isHour?1.5:0.9; ctx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════
+//  GRID TOGGLE
+// ═══════════════════════════════════════
+function toggleGrid() {
+  const on=document.getElementById('gridToggle').checked;
+  document.getElementById('graphPaper').classList.toggle('visible',on);
+}
+
+// ═══════════════════════════════════════
+//  WAVEFORM
+// ═══════════════════════════════════════
+// Randomized generative waveform — a fresh set of harmonics each time a new
+// flow session starts (see pressPlay), summed together and slowly drifting.
+// Not audio-reactive, purely decorative, but no two sessions trace the same shape.
+let scopeHarmonics = [];
+function seedScope() {
+  scopeHarmonics = [];
+  const n = 3 + Math.floor(Math.random()*3); // 3–5 stacked harmonics
+  for (let i=0; i<n; i++) {
+    scopeHarmonics.push({
+      freq:  0.04 + Math.random()*0.4,
+      amp:   (2.5 + Math.random()*6) / Math.sqrt(i+1),
+      phase: Math.random()*Math.PI*2,
+      speed: (0.3 + Math.random()*1.3) * (Math.random()<0.5 ? -1 : 1)
+    });
+  }
+}
+function drawScope(t) {
+  const path=document.getElementById('scopePath');
+  if(!path) return;
+  let d='M0,14';
+  for(let x=0;x<=96;x+=3){
+    let y=14;
+    for (const h of scopeHarmonics) y += Math.sin(x*h.freq + t*h.speed + h.phase) * h.amp;
+    y = Math.max(2, Math.min(26, y));
+    d += ` L${x},${y.toFixed(1)}`;
+  }
+  path.setAttribute('d', d);
+}
+
+// ═══════════════════════════════════════
+//  COLOR PICKER
+// ═══════════════════════════════════════
+function buildColorPicker(gridId, hexInId, hexPrevId, current) {
+  const el=document.getElementById(gridId); el.innerHTML='';
+  PRESET_COLORS.forEach(hex=>{
+    const s=document.createElement('div');
+    s.className='color-swatch'+(hex===current?' selected':'');
+    s.style.background=hex;
+    s.onclick=()=>{
+      el.querySelectorAll('.color-swatch').forEach(x=>x.classList.remove('selected'));
+      s.classList.add('selected');
+      document.getElementById(hexInId).value=hex;
+      document.getElementById(hexPrevId).style.background=hex;
+      if(gridId==='addColorPicker') addPendingColor=hex; else prefPendingColor=hex;
+    };
+    el.appendChild(s);
+  });
+  document.getElementById(hexInId).oninput=function(){
+    const v=this.value.trim();
+    if(/^#[0-9a-fA-F]{6}$/.test(v)){
+      document.getElementById(hexPrevId).style.background=v;
+      el.querySelectorAll('.color-swatch').forEach(x=>x.classList.remove('selected'));
+      if(gridId==='addColorPicker') addPendingColor=v; else prefPendingColor=v;
+    }
+  };
+}
+
+// ═══════════════════════════════════════
+//  THUMB UPLOAD
+// ═══════════════════════════════════════
+function triggerThumbUpload(ctx) {
+  document.getElementById(ctx==='add'?'thumbFileInput':'prefThumbFileInput').click();
+}
+function handleThumbUpload(e,ctx) {
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const data=ev.target.result;
+    if(ctx==='add'){
+      addPendingThumb=data;
+      document.getElementById('addThumbPreview').innerHTML=`<img src="${data}" alt="">`;
+      document.getElementById('addThumbClear').classList.add('visible');
+    } else {
+      prefPendingThumb=data;
+      document.getElementById('prefThumbPreview').innerHTML=`<img src="${data}" alt="">`;
+      document.getElementById('prefThumbClear').classList.add('visible');
+    }
+  };
+  reader.readAsDataURL(file); e.target.value='';
+}
+function clearThumb(ctx,e) {
+  e.stopPropagation();
+  if(ctx==='add'){
+    addPendingThumb=null;
+    document.getElementById('addThumbPreview').innerHTML='<span class="x-placeholder">✕</span>';
+    document.getElementById('addThumbClear').classList.remove('visible');
+  } else {
+    prefPendingThumb='clear';
+    document.getElementById('prefThumbPreview').innerHTML='<span class="x-placeholder">✕</span>';
+    document.getElementById('prefThumbClear').classList.remove('visible');
+  }
+}
+
+// ═══════════════════════════════════════
+//  ADD MODAL
+// ═══════════════════════════════════════
+function openAddModal() {
+  document.getElementById('inputName').value='';
+  document.getElementById('inputNotes').value='';
+  document.getElementById('inputDurSlider').value=25;
+  document.getElementById('inputDurReadout').textContent='25 min';
+  addPendingColor=DEFAULT_COLOR; addPendingThumb=null;
+  document.getElementById('addThumbPreview').innerHTML='<span class="x-placeholder">✕</span>';
+  document.getElementById('addThumbClear').classList.remove('visible');
+  document.getElementById('addHexInput').value=DEFAULT_COLOR;
+  document.getElementById('addHexPreview').style.background=DEFAULT_COLOR;
+  document.getElementById('addFreeColor').value=DEFAULT_COLOR;
+  buildColorPicker('addColorPicker','addHexInput','addHexPreview',DEFAULT_COLOR);
+  document.getElementById('addModalOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('inputName').focus(),100);
+}
+function closeAddModal() { document.getElementById('addModalOverlay').classList.remove('open'); }
+function addTask() {
+  const name=document.getElementById('inputName').value.trim();
+  const lane=document.getElementById('inputLane').value;
+  const notes=document.getElementById('inputNotes').value.trim();
+  const dur=parseInt(document.getElementById('inputDurSlider').value)||25;
+  if(!name){ document.getElementById('inputName').focus(); return; }
+  tasks.push({ id:nextId++, name, duration:dur, lane, color:addPendingColor, thumb:addPendingThumb, notes, placed:false, startMin:null, topPx:null, done:false });
+  closeAddModal(); render(); drawRuler();
+}
+
+// ═══════════════════════════════════════
+//  PREFS MODAL
+// ═══════════════════════════════════════
+function openPrefModal(index) {
+  prefEditIndex=index;
+  const t=tasks[index]; prefPendingColor=t.color; prefPendingThumb=null;
+  document.getElementById('prefName').value=t.name;
+  const slider=document.getElementById('prefDurSlider');
+  slider.value=t.duration;
+  document.getElementById('prefDurReadout').textContent=t.duration+' min';
+  document.getElementById('prefHexInput').value=t.color;
+  document.getElementById('prefHexPreview').style.background=t.color;
+  document.getElementById('prefFreeColor').value=t.color;
+  document.getElementById('prefNotes').value=t.notes||'';
+  const pp=document.getElementById('prefThumbPreview');
+  if(t.thumb){
+    pp.innerHTML=`<img src="${t.thumb}" alt="">`;
+    document.getElementById('prefThumbClear').classList.add('visible');
+  } else {
+    pp.innerHTML='<span class="x-placeholder">✕</span>';
+    document.getElementById('prefThumbClear').classList.remove('visible');
+  }
+  buildColorPicker('prefColorPicker','prefHexInput','prefHexPreview',t.color);
+  document.getElementById('prefModalOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('prefName').focus(),100);
+}
+function closePrefModal() { document.getElementById('prefModalOverlay').classList.remove('open'); }
+function savePrefs() {
+  if(prefEditIndex<0) return;
+  const t=tasks[prefEditIndex];
+  const name=document.getElementById('prefName').value.trim();
+  const dur=parseInt(document.getElementById('prefDurSlider').value)||t.duration;
+  if(!name){ document.getElementById('prefName').focus(); return; }
+  t.name=name; t.duration=dur; t.color=prefPendingColor;
+  t.notes=document.getElementById('prefNotes').value.trim();
+  if(prefPendingThumb==='clear') t.thumb=null;
+  else if(prefPendingThumb) t.thumb=prefPendingThumb;
+  closePrefModal(); render(); drawRuler();
+}
+
+// ═══════════════════════════════════════
+//  TASK MANAGEMENT
+// ═══════════════════════════════════════
+// Permanently remove a task — the Ether. Works from storage (x button) or
+// from a placed block (drag-to-ether or its x button). Gone for good.
+function permanentDelete(taskId,event) {
+  if(event) event.stopPropagation();
+  const cur=getCurrentTask();
+  if(cur && cur.id===taskId){ playing=false; cancelAnimationFrame(rafId); }
+  tasks=tasks.filter(t=>t.id!==taskId);
+  render(); drawRuler();
+}
+// Slow fade before the block actually leaves — used for the Ether specifically.
+function fadeThenDelete(blockEl,taskId) {
+  blockEl.style.transition='opacity 0.8s ease, transform 0.8s ease';
+  blockEl.style.opacity='0';
+  blockEl.style.transform='translateY(14px) scale(0.94)';
+  blockEl.style.pointerEvents='none';
+  setTimeout(()=>permanentDelete(taskId), 800);
+}
+// Pull a placed block back into Storage — keeps all its data, just stops
+// occupying time on the board.
+function unplaceTask(taskId) {
+  const t=tasks.find(tt=>tt.id===taskId);
+  if(!t) return;
+  const cur=getCurrentTask();
+  if(cur && cur.id===taskId){ playing=false; cancelAnimationFrame(rafId); }
+  t.placed=false; t.startMin=null; t.topPx=null;
+  setBtnStates(); render(); drawRuler();
+}
+function reorderTask(from,to) {
+  const moved=tasks.splice(from,1)[0];
+  tasks.splice(to,0,moved);
+  render();
+}
+
+// ═══════════════════════════════════════
+//  KEYBOARD
+// ═══════════════════════════════════════
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable) return;
+  if(e.code==='Space'){ e.preventDefault(); playing?pressPause():pressPlay(); }
+  if(e.code==='Escape'){ closeAddModal(); closePrefModal(); }
+  if(e.code==='KeyN') openAddModal();
+});
+document.getElementById('addModalOverlay').addEventListener('click',e=>{
+  if(e.target===document.getElementById('addModalOverlay')) closeAddModal();
+});
+document.getElementById('prefModalOverlay').addEventListener('click',e=>{
+  if(e.target===document.getElementById('prefModalOverlay')) closePrefModal();
+});
+document.getElementById('inputName').addEventListener('keydown',e=>{ if(e.key==='Enter') addTask(); });
+document.getElementById('prefName').addEventListener('keydown',e=>{ if(e.key==='Enter') savePrefs(); });
+document.getElementById('sessionName').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); e.target.blur(); } });
+document.getElementById('sessionName').addEventListener('input',e=>{
+  document.getElementById('nowLabel').textContent = e.target.textContent.trim() || 'Untitled Flow';
+});
+document.getElementById('sessionName').addEventListener('focus',e=>{
+  const r=document.createRange(); r.selectNodeContents(e.target);
+  const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+});
+window.addEventListener('resize',()=>{ drawRuler(); drawGrid(); });
+
+// Keep ruler in sync with scroll
+document.getElementById('seqWrap').addEventListener('scroll',function(){
+  document.getElementById('rulerCanvas').style.left=(-this.scrollLeft)+'px';
+  document.getElementById('rulerPlayhead').style.left=(getPlayheadX()-this.scrollLeft)+'px';
+});
+
+// ═══════════════════════════════════════
+//  APPEARANCE / SKIN PANEL
+//  Ableton-style tone control: hue / saturation / brightness applied
+//  as a filter to #appRoot only. Nothing here touches the stored task
+//  colors — this is purely a personal viewing lens, always resettable,
+//  and the built defaults remain the anchor.
+// ═══════════════════════════════════════
+function toggleEtherInfo(e) {
+  e.stopPropagation();
+  document.getElementById('etherTooltip').classList.toggle('open');
+}
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#etherInfoBtn')&&!e.target.closest('#etherTooltip')){
+    document.getElementById('etherTooltip').classList.remove('open');
+  }
+});
+
+function toggleQueueCollapse() {
+  const collapsed = document.getElementById('queuePanel').classList.toggle('collapsed');
+  document.getElementById('queueCollapseBtn').textContent = collapsed ? 'Show' : 'Hide';
+}
+
+function toggleSkinPanel() {
+  document.getElementById('skinPanel').classList.toggle('open');
+}
+function applySkin() {
+  const hue = document.getElementById('hueSlider').value;
+  const sat = document.getElementById('satSlider').value;
+  const bri = document.getElementById('briSlider').value;
+  document.getElementById('hueReadout').textContent = hue+'\u00b0';
+  document.getElementById('satReadout').textContent = sat+'%';
+  document.getElementById('briReadout').textContent = bri+'%';
+  document.getElementById('appRoot').style.filter =
+    `hue-rotate(${hue}deg) saturate(${sat}%) brightness(${bri}%)`;
+}
+function resetSkin() {
+  document.getElementById('hueSlider').value = 0;
+  document.getElementById('satSlider').value = 100;
+  document.getElementById('briSlider').value = 100;
+  applySkin();
+  setPhColor('#4B3FE8');
+  document.querySelectorAll('.ph-swatch').forEach(b=>b.classList.toggle('active', b.dataset.color==='#4B3FE8'));
+  document.getElementById('phCustomColor').value = '#4B3FE8';
+  document.getElementById('phLineStyle').value = 'solid';
+  document.getElementById('phFlagShape').value = 'triangle';
+  applyPlayheadSkin();
+}
+
+// ── playhead skin: color via CSS custom property, style/shape via classes on #appRoot ──
+function setPhColor(hex, btnEl) {
+  document.getElementById('appRoot').style.setProperty('--playhead', hex);
+  document.getElementById('phColorReadout').textContent = hex;
+  document.querySelectorAll('.ph-swatch').forEach(b=>b.classList.remove('active'));
+  if (btnEl) btnEl.classList.add('active');
+  document.getElementById('phCustomColor').value = hex;
+}
+function applyPlayheadSkin() {
+  const root = document.getElementById('appRoot');
+  root.className = root.className.replace(/\bph-line-\S+/g,'').replace(/\bph-flag-\S+/g,'').trim();
+  const lineStyle = document.getElementById('phLineStyle').value;
+  const flagShape = document.getElementById('phFlagShape').value;
+  if (lineStyle !== 'solid') root.classList.add('ph-line-'+lineStyle);
+  if (flagShape !== 'triangle') root.classList.add('ph-flag-'+flagShape);
+}
+
+// ═══════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════
+// Storage → Flow Zone drop target — attached once, not per-render, since
+// #flowZone itself persists across renders (only its children get rebuilt).
+(function(){
+  const zone=document.getElementById('flowZone');
+  zone.addEventListener('dragover', e=>{ e.preventDefault(); });
+  zone.addEventListener('drop', e=>{
+    e.preventDefault();
+    const fromIdx=+e.dataTransfer.getData('text/plain');
+    const t=tasks[fromIdx];
+    if(!t || t.placed) return;
+    const rect=zone.getBoundingClientRect();
+    const dropMin=Math.max(0, Math.round((e.clientX-rect.left)/PX_PER_MIN));
+    const dropTop=Math.max(0, Math.min(FLOW_ZONE_HEIGHT-62, e.clientY-rect.top-26));
+    t.placed=true;
+    t.startMin=resolvePlacement(t.id, dropMin, t.duration);
+    t.topPx=dropTop;
+    render(); drawRuler();
+  });
+})();
+
+seedScope();
+drawScope(0);
+setBtnStates();
+render();
+drawRuler();
+</script>
+</body>
+</html>
